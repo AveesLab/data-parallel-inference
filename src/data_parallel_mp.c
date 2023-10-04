@@ -141,6 +141,16 @@ static int write_result(char *file_path, measure_data_t *measure_data)
 
     qsort(sum_measure_data, sizeof(sum_measure_data)/sizeof(sum_measure_data[0]), sizeof(sum_measure_data[0]), compare);
 
+    int startIdx = 30;
+    double new_sum_measure_data[sizeof(sum_measure_data)/sizeof(sum_measure_data[0])-startIdx][sizeof(sum_measure_data[0])];
+
+    int newIndex = 0;
+    for (int i = startIdx; i < sizeof(sum_measure_data)/sizeof(sum_measure_data[0]); i++) {
+        for (int j = 0; j < sizeof(sum_measure_data[0]); j++) {
+            new_sum_measure_data[newIndex][j] = sum_measure_data[i][j];
+        }
+        newIndex++;
+    }
 
     fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", 
             "core_id", 
@@ -149,13 +159,13 @@ static int write_result(char *file_path, measure_data_t *measure_data)
             "start_postprocess",    "e_postprocess",    "end_postprocess", 
             "execution_time",       "frame_rate");
 
-    for(i = 0; i < num_exp * num_process; i++)
+    for(i = 0; i < num_exp * num_process - startIdx; i++)
     {
         fprintf(fp, "%0.0f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n",  
-                sum_measure_data[i][0], sum_measure_data[i][1], sum_measure_data[i][2], 
-                sum_measure_data[i][3], sum_measure_data[i][4], sum_measure_data[i][5], 
-                sum_measure_data[i][6], sum_measure_data[i][7], sum_measure_data[i][8], 
-                sum_measure_data[i][9], sum_measure_data[i][10], sum_measure_data[i][11]);
+                new_sum_measure_data[i][0], new_sum_measure_data[i][1], new_sum_measure_data[i][2], 
+                new_sum_measure_data[i][3], new_sum_measure_data[i][4], new_sum_measure_data[i][5], 
+                new_sum_measure_data[i][6], new_sum_measure_data[i][7], new_sum_measure_data[i][8], 
+                new_sum_measure_data[i][9], new_sum_measure_data[i][10], new_sum_measure_data[i][11]);
     }
 
     fclose(fp);

@@ -171,6 +171,17 @@ static int write_result(char *file_path, measure_data_t *measure_data)
 
     qsort(sum_measure_data, sizeof(sum_measure_data)/sizeof(sum_measure_data[0]), sizeof(sum_measure_data[0]), compare);
 
+    int startIdx = 30;
+    double new_sum_measure_data[sizeof(sum_measure_data)/sizeof(sum_measure_data[0])-startIdx][sizeof(sum_measure_data[0])];
+
+    int newIndex = 0;
+    for (int i = startIdx; i < sizeof(sum_measure_data)/sizeof(sum_measure_data[0]); i++) {
+        for (int j = 0; j < sizeof(sum_measure_data[0]); j++) {
+            new_sum_measure_data[newIndex][j] = sum_measure_data[i][j];
+        }
+        newIndex++;
+    }
+
     fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", 
             "core_id", 
             "start_preprocess", "e_preprocess", "end_preprocess", 
@@ -184,17 +195,17 @@ static int write_result(char *file_path, measure_data_t *measure_data)
             "start_postprocess", "e_postprocess", "end_postprocess", 
             "execution_time", "frame_rate");
 
-    for(i = 0; i < num_exp * num_process; i++)
+    for(i = 0; i < num_exp * num_process - startIdx; i++)
     {
         fprintf(fp, "%0.0f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n",  
-                sum_measure_data[i][0], sum_measure_data[i][1], sum_measure_data[i][2], 
-                sum_measure_data[i][3], sum_measure_data[i][4], sum_measure_data[i][5], 
-                sum_measure_data[i][6], sum_measure_data[i][7], sum_measure_data[i][8], 
-                sum_measure_data[i][9], sum_measure_data[i][10], sum_measure_data[i][11],
-                sum_measure_data[i][12], sum_measure_data[i][13], sum_measure_data[i][14], 
-                sum_measure_data[i][15], sum_measure_data[i][16], sum_measure_data[i][17], 
-                sum_measure_data[i][18], sum_measure_data[i][19], sum_measure_data[i][20], 
-                sum_measure_data[i][21], sum_measure_data[i][22]);
+                new_sum_measure_data[i][0], new_sum_measure_data[i][1], new_sum_measure_data[i][2], 
+                new_sum_measure_data[i][3], new_sum_measure_data[i][4], new_sum_measure_data[i][5], 
+                new_sum_measure_data[i][6], new_sum_measure_data[i][7], new_sum_measure_data[i][8], 
+                new_sum_measure_data[i][9], new_sum_measure_data[i][10], new_sum_measure_data[i][11],
+                new_sum_measure_data[i][12], new_sum_measure_data[i][13], new_sum_measure_data[i][14], 
+                new_sum_measure_data[i][15], new_sum_measure_data[i][16], new_sum_measure_data[i][17], 
+                new_sum_measure_data[i][18], new_sum_measure_data[i][19], new_sum_measure_data[i][20], 
+                new_sum_measure_data[i][21], new_sum_measure_data[i][22]);
     }
 
     fclose(fp);
@@ -534,7 +545,7 @@ static void processFunc(process_data_t data)
         measure_data.end_postprocess[i] = get_time_in_ms();
         measure_data.e_postprocess[i] = measure_data.end_postprocess[i] - measure_data.start_postprocess[i];
         measure_data.execution_time[i] = measure_data.end_postprocess[i] - measure_data.start_preprocess[i];
-        measure_data.frame_rate[i] = 1000.0 / measure_data.execution_time[i];
+        measure_data.frame_rate[i] = 1000 / (measure_data.e_gpu_infer[i] + measure_data.e_preprocess[i]);
         // printf("\n%s: Predicted in %0.3f milli-seconds.\n", input, measure_data.e_infer[i]);
 #else
         data.execution_time[i] = get_time_in_ms() - time;

@@ -258,7 +258,7 @@ static void threadFunc(thread_data_t data)
         end_postprocess[count] = get_time_in_ms();
         e_postprocess[count] = end_postprocess[count] - start_postprocess[count];
         execution_time[count] = end_postprocess[count] - start_preprocess[count];
-        frame_rate[count] = 1000.0 / execution_time[count];
+        frame_rate[count] = 1000.0 / execution_time[count] / num_thread;
         // printf("\n%s: Predicted in %0.3f milli-seconds.\n", input, e_infer[count]);
 #else
         execution_time[i] = get_time_in_ms() - time;
