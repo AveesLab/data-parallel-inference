@@ -198,7 +198,20 @@ void sequential(char *datacfg, char *cfgfile, char *weightfile, char *filename, 
 #ifdef MEASURE
         start_infer[i] = get_time_in_ms();
 #endif
+        // cpu_set_t cpuset;
+        // openblas_set_num_threads(3);
+        // CPU_ZERO(&cpuset);
+        // CPU_SET(core_id, &cpuset);
+        // pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
+        // CPU_ZERO(&cpuset);
+        // CPU_SET(6, &cpuset);
+        // openblas_setaffinity(0, sizeof(cpuset), &cpuset);
+        
+        // CPU_ZERO(&cpuset);
+        // CPU_SET(7, &cpuset);
+        // openblas_setaffinity(1, sizeof(cpuset), &cpuset);
+        
         if (device) predictions = network_predict(net, X);
         else predictions = network_predict_cpu(net, X);
 

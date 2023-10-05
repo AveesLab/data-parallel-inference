@@ -116,7 +116,10 @@ void gemm (int TA ,int TB ,int M ,int N ,int K ,float ALPHA ,
     float *C ,int ldc )  
 {
 #ifdef OPENBLAS  
-	cblas_sgemm (CblasRowMajor ,CblasNoTrans ,CblasNoTrans ,M ,N ,K ,ALPHA ,A ,lda ,B ,ldb ,BETA ,C ,ldc );  
+    extern int reclaim;
+    cblas_sgemm (CblasRowMajor ,CblasNoTrans ,CblasNoTrans ,M ,N ,K ,ALPHA ,A ,lda ,B ,ldb ,BETA ,C ,ldc );
+	// if(reclaim) cblas_sgemm (CblasRowMajor ,CblasNoTrans ,CblasNoTrans ,M ,N ,K ,ALPHA ,A ,lda ,B ,ldb ,BETA ,C ,ldc );  
+	// else gemm_cpu (TA ,TB ,M ,N ,K ,ALPHA ,A ,lda ,B ,ldb ,BETA ,C ,ldc );  
 #else  
 	gemm_cpu (TA ,TB ,M ,N ,K ,ALPHA ,A ,lda ,B ,ldb ,BETA ,C ,ldc );  
 #endif  

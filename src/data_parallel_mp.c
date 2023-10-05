@@ -70,6 +70,8 @@ typedef struct measure_data_t{
     double execution_time[200];
     double frame_rate[200];
 
+    int process_id;
+
 } measure_data_t;
 #endif
 
@@ -125,7 +127,7 @@ static int write_result(char *file_path, measure_data_t *measure_data)
         int core_id = (i + 1) - (i / num_process) * num_process;
         int count = i / num_process;
 
-        sum_measure_data[i][0] = (double)core_id,
+        sum_measure_data[i][0] = measure_data[core_id - 1].process_id;
         sum_measure_data[i][1] = measure_data[core_id - 1].start_preprocess[count];
         sum_measure_data[i][2] = measure_data[core_id - 1].e_preprocess[count];
         sum_measure_data[i][3] = measure_data[core_id - 1].end_preprocess[count];
@@ -172,6 +174,7 @@ static void processFunc(process_data_t data)
 {
 #ifdef MEASURE
     measure_data_t measure_data;
+    measure_data.process_id = data.process_id;
 #endif
 
     // __CPU AFFINITY SETTING__
@@ -277,6 +280,21 @@ static void processFunc(process_data_t data)
 #ifdef MEASURE
         measure_data.start_infer[i] = get_time_in_ms();
 #endif
+        if (data.process_id == 1) {
+            cpu_set_t cpuset;
+            openblas_set_num_threads(3);
+            CPU_ZERO(&cpuset);
+            CPU_SET(data.process_id, &cpuset);
+            pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+
+            CPU_ZERO(&cpuset);
+            CPU_SET(3, &cpuset);
+            openblas_setaffinity(0, sizeof(cpuset), &cpuset);
+            
+            CPU_ZERO(&cpuset);
+            CPU_SET(5, &cpuset);
+            openblas_setaffinity(1, sizeof(cpuset), &cpuset);
+        }
 
         if (device) predictions = network_predict(net, X);
         else predictions = network_predict_cpu(net, X);
@@ -386,7 +404,7 @@ void data_parallel_mp(char *datacfg, char *cfgfile, char *weightfile, char *file
         data[i].outfile = outfile;
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
-        data[i].process_id = i + 1;
+        data[i].process_id = 3 * i + 1;
     }
 
     for (i = 0; i < num_process; i++) {
@@ -400,7 +418,7 @@ void data_parallel_mp(char *datacfg, char *cfgfile, char *weightfile, char *file
 
         pid = fork();
         if (pid == 0) { // child process
-
+            // if(i == 2) sleep(300);
 #ifdef MEASURE
             close(fd[i][0]); // close reading end in the child
             processFunc(data[i], fd[i][1]);

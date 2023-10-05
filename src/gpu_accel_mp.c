@@ -316,7 +316,6 @@ static void processFunc(process_data_t data)
         printf("\nProcess %d is set to CPU core %d\n\n", data.process_id, sched_getcpu());
 #endif
 
-        time = get_time_in_ms();
         // __Preprocess__
         lock_resource(0);
 #ifdef MEASURE
@@ -370,6 +369,7 @@ static void processFunc(process_data_t data)
         measure_data.start_gpu_infer[i] = get_time_in_ms();
 #endif
 
+        time = get_time_in_ms();
         cuda_push_array(state.input, net.input_pinned_cpu, size);
         state.workspace = net.workspace;
         for(j = 0; j < gLayer; ++j){
@@ -474,7 +474,7 @@ static void processFunc(process_data_t data)
 #else
         data.execution_time[i] = get_time_in_ms() - time;
         data.frame_rate[i] = 1000.0 / (data.execution_time[i] / num_process); // N process
-        printf("\n%s: Predicted in %0.3f milli-seconds. (%0.3lf fps)\n", input, data.execution_time[i], measure_data.frame_rate[i]);
+        printf("\n%s: Predicted in %0.3f milli-seconds.\n", input, data.execution_time[i]);
 #endif
         // free memory
         free_image(im);

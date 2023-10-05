@@ -35,6 +35,8 @@
 static int sem_id;
 static key_t key = 1234;
 
+int reclaim = 0;
+
 typedef struct process_data_t{
     char *datacfg;
     char *cfgfile;
@@ -427,7 +429,7 @@ static void processFunc(process_data_t data)
 #ifdef MEASURE
         measure_data.start_reclaim_infer[i] = get_time_in_ms();
 #endif
-
+        // usleep(10);
         // when cpu reclaim over gpu, exit() okay??????????????????????
         openblas_set_num_threads(3);
         CPU_ZERO(&cpuset);
@@ -435,13 +437,15 @@ static void processFunc(process_data_t data)
         pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
         CPU_ZERO(&cpuset);
-        CPU_SET(6, &cpuset);
+        CPU_SET(9, &cpuset);
         openblas_setaffinity(0, sizeof(cpuset), &cpuset);
         
         CPU_ZERO(&cpuset);
-        CPU_SET(7, &cpuset);
+        CPU_SET(10, &cpuset);
         openblas_setaffinity(1, sizeof(cpuset), &cpuset);
 
+        reclaim = 1;
+        
         state.workspace = net.workspace_cpu;
         gpu_yolo = 0;
         for(j = gLayer; j < rLayer; ++j){
@@ -470,6 +474,8 @@ static void processFunc(process_data_t data)
         measure_data.start_cpu_infer[i] = get_time_in_ms();
 #endif
 
+        // usleep(10);
+        reclaim = 0;
         openblas_set_num_threads(1);
         for(j = rLayer; j < net.n; ++j){
             state.index = j;
@@ -613,7 +619,7 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
         data[i].outfile = outfile;
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
-        data[i].process_id = i + 1;
+        data[i].process_id = 3 * (i + 1);
     }
 
     for (i = 0; i < num_process; i++) {
