@@ -41,6 +41,12 @@
 #include "gaussian_yolo_layer.h"
 #include "representation_layer.h"
 
+#ifdef GPU
+    static int device = 1;
+#else
+    static int device = 0;
+#endif
+
 void empty_func(dropout_layer l, network_state state) {
     //l.output_gpu = state.input;
 }
@@ -484,8 +490,8 @@ layer parse_yolo(list *options, size_params params)
     else if (strcmp(iou_loss, "diou") == 0) l.iou_loss = DIOU;
     else if (strcmp(iou_loss, "ciou") == 0) l.iou_loss = CIOU;
     else l.iou_loss = IOU;
-    fprintf(stderr, "[yolo] params: iou loss: %s (%d), iou_norm: %2.2f, obj_norm: %2.2f, cls_norm: %2.2f, delta_norm: %2.2f, scale_x_y: %2.2f\n",
-        iou_loss, l.iou_loss, l.iou_normalizer, l.obj_normalizer, l.cls_normalizer, l.delta_normalizer, l.scale_x_y);
+    // fprintf(stderr, "[yolo] params: iou loss: %s (%d), iou_norm: %2.2f, obj_norm: %2.2f, cls_norm: %2.2f, delta_norm: %2.2f, scale_x_y: %2.2f\n",
+    //     iou_loss, l.iou_loss, l.iou_normalizer, l.obj_normalizer, l.cls_normalizer, l.delta_normalizer, l.scale_x_y);
 
     char *iou_thresh_kind_str = option_find_str_quiet(options, "iou_thresh_kind", "iou");
     if (strcmp(iou_thresh_kind_str, "iou") == 0) l.iou_thresh_kind = IOU;
@@ -504,7 +510,7 @@ layer parse_yolo(list *options, size_params params)
         if (strcmp(nms_kind, "greedynms") == 0) l.nms_kind = GREEDY_NMS;
         else if (strcmp(nms_kind, "diounms") == 0) l.nms_kind = DIOU_NMS;
         else l.nms_kind = DEFAULT_NMS;
-        printf("nms_kind: %s (%d), beta = %f \n", nms_kind, l.nms_kind, l.beta_nms);
+        // printf("nms_kind: %s (%d), beta = %f \n", nms_kind, l.nms_kind, l.beta_nms);
     }
 
     l.jitter = option_find_float(options, "jitter", .2);
@@ -635,7 +641,7 @@ layer parse_gaussian_yolo(list *options, size_params params) // Gaussian_YOLOv3
         else if (strcmp(nms_kind, "diounms") == 0) l.nms_kind = DIOU_NMS;
         else if (strcmp(nms_kind, "cornersnms") == 0) l.nms_kind = CORNERS_NMS;
         else l.nms_kind = DEFAULT_NMS;
-        printf("nms_kind: %s (%d), beta = %f \n", nms_kind, l.nms_kind, l.beta_nms);
+        // printf("nms_kind: %s (%d), beta = %f \n", nms_kind, l.nms_kind, l.beta_nms);
     }
 
     char *yolo_point = option_find_str_quiet(options, "yolo_point", "center");
@@ -991,11 +997,11 @@ layer parse_shortcut(list *options, size_params params, network net)
 
     for (i = 0; i < n; ++i) {
         int index = layers[i];
-        assert(params.w == net.layers[index].out_w && params.h == net.layers[index].out_h);
+        // assert(params.w == net.layers[index].out_w && params.h == net.layers[index].out_h);
 
-        if (params.w != net.layers[index].out_w || params.h != net.layers[index].out_h || params.c != net.layers[index].out_c)
-            fprintf(stderr, " (%4d x%4d x%4d) + (%4d x%4d x%4d) \n",
-                params.w, params.h, params.c, net.layers[index].out_w, net.layers[index].out_h, params.net.layers[index].out_c);
+        // if (params.w != net.layers[index].out_w || params.h != net.layers[index].out_h || params.c != net.layers[index].out_c)
+            // fprintf(stderr, " (%4d x%4d x%4d) + (%4d x%4d x%4d) \n",
+            //     params.w, params.h, params.c, net.layers[index].out_w, net.layers[index].out_h, params.net.layers[index].out_c);
     }
 
     return s;
@@ -1131,14 +1137,14 @@ route_layer parse_route(list *options, size_params params)
     layer.stream = option_find_int_quiet(options, "stream", -1);
     layer.wait_stream_id = option_find_int_quiet(options, "wait_stream", -1);
 
-    if (n > 3) fprintf(stderr, " \t    ");
-    else if (n > 1) fprintf(stderr, " \t            ");
-    else fprintf(stderr, " \t\t            ");
+    // if (n > 3) fprintf(stderr, " \t    ");
+    // else if (n > 1) fprintf(stderr, " \t            ");
+    // else fprintf(stderr, " \t\t            ");
 
-    fprintf(stderr, "           ");
-    if (layer.groups > 1) fprintf(stderr, "%d/%d", layer.group_id, layer.groups);
-    else fprintf(stderr, "   ");
-    fprintf(stderr, " -> %4d x%4d x%4d \n", layer.out_w, layer.out_h, layer.out_c);
+    // fprintf(stderr, "           ");
+    // if (layer.groups > 1) fprintf(stderr, "%d/%d", layer.group_id, layer.groups);
+    // else fprintf(stderr, "   ");
+    // fprintf(stderr, " -> %4d x%4d x%4d \n", layer.out_w, layer.out_h, layer.out_c);
 
     return layer;
 }
@@ -1256,7 +1262,7 @@ void parse_net_options(list *options, network *net)
         if (compute_capability >= 700) net->cudnn_half = 1;
         else net->cudnn_half = 0;
 #endif// CUDNN_HALF
-        fprintf(stderr, " %d : compute_capability = %d, cudnn_half = %d, GPU: %s \n", net->gpu_index, compute_capability, net->cudnn_half, device_name);
+        // fprintf(stderr, " %d : compute_capability = %d, cudnn_half = %d, GPU: %s \n", net->gpu_index, compute_capability, net->cudnn_half, device_name);
     }
     else fprintf(stderr, " GPU isn't used \n");
 #endif// GPU
@@ -1354,10 +1360,10 @@ void set_train_only_bn(network net)
 
 network parse_network_cfg(char *filename)
 {
-    return parse_network_cfg_custom(filename, 0, 0);
+    return parse_network_cfg_custom(filename, 0, 0, device);
 }
 
-network parse_network_cfg_custom(char *filename, int batch, int time_steps)
+network parse_network_cfg_custom(char *filename, int batch, int time_steps, int device)
 {
     list *sections = read_cfg(filename);
     node *n = sections->front;
@@ -1375,7 +1381,7 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
     parse_net_options(options, &net);
 
 #ifdef GPU
-    printf("net.optimized_memory = %d \n", net.optimized_memory);
+    // printf("net.optimized_memory = %d \n", net.optimized_memory);
     if (net.optimized_memory >= 2 && params.train) {
         pre_allocate_pinned_memory((size_t)1024 * 1024 * 1024 * 8);   // pre-allocate 8 GB CPU-RAM for pinned memory
     }
@@ -1393,7 +1399,7 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
     params.batch = net.batch;
     params.time_steps = net.time_steps;
     params.net = net;
-    printf("mini_batch = %d, batch = %d, time_steps = %d, train = %d \n", net.batch, net.batch * net.subdivisions, net.time_steps, params.train);
+    // printf("mini_batch = %d, batch = %d, time_steps = %d, train = %d \n", net.batch, net.batch * net.subdivisions, net.time_steps, params.train);
 
     int last_stop_backward = -1;
     int avg_outputs = 0;
@@ -1429,14 +1435,14 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
 
     int old_params_train = params.train;
 
-    fprintf(stderr, "   layer   filters  size/strd(dil)      input                output\n");
+    // fprintf(stderr, "   layer   filters  size/strd(dil)      input                output\n");
     while(n){
 
         params.train = old_params_train;
         if (count < last_stop_backward) params.train = 0;
 
         params.index = count;
-        fprintf(stderr, "%4d ", count);
+        // fprintf(stderr, "%4d ", count);
         s = (section *)n->val;
         options = s->options;
         layer l = { (LAYER_TYPE)0 };
@@ -1763,10 +1769,12 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
     set_train_only_bn(net); // set l.train_only_bn for all required layers
 
     net.outputs = get_network_output_size(net);
-    net.output = get_network_output(net);
+
+    net.output = get_network_output(net, device);
+
     avg_outputs = avg_outputs / avg_counter;
-    fprintf(stderr, "Total BFLOPS %5.3f \n", bflops);
-    fprintf(stderr, "avg_outputs = %d \n", avg_outputs);
+    // fprintf(stderr, "Total BFLOPS %5.3f \n", bflops);
+    // fprintf(stderr, "avg_outputs = %d \n", avg_outputs);
 #ifdef GPU
     get_cuda_stream();
     //get_cuda_memcpy_stream();
@@ -1789,9 +1797,12 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
             *net.max_output16_size = max_outputs;
             CHECK_CUDA(cudaMalloc((void **)net.output16_gpu, *net.max_output16_size * sizeof(short))); //sizeof(half)
         }
-        if (workspace_size) {
-            fprintf(stderr, " Allocate additional workspace_size = %1.2f MB \n", (float)workspace_size/1000000);
-            net.workspace = cuda_make_array(0, workspace_size / sizeof(float) + 1);
+        if (device) {
+            if (workspace_size) {
+                // fprintf(stderr, " Allocate additional workspace_size = %1.2f MB \n", (float)workspace_size/1000000);
+                net.workspace = cuda_make_array(0, workspace_size / sizeof(float) + 1);
+                net.workspace_cpu = (float*)xcalloc(1, workspace_size);
+            }
         }
         else {
             net.workspace = (float*)xcalloc(1, workspace_size);
@@ -2262,7 +2273,7 @@ void load_weights_upto(network *net, char *filename, int cutoff)
         cuda_set_device(net->gpu_index);
     }
 #endif
-    fprintf(stderr, "Loading weights from %s...", filename);
+    // fprintf(stderr, "Loading weights from %s...", filename);
     fflush(stdout);
     FILE *fp = fopen(filename, "rb");
     if(!fp) file_error(filename);
@@ -2274,19 +2285,19 @@ void load_weights_upto(network *net, char *filename, int cutoff)
     fread(&minor, sizeof(int32_t), 1, fp);
     fread(&revision, sizeof(int32_t), 1, fp);
     if ((major * 10 + minor) >= 2) {
-        printf("\n seen 64");
+        // printf("\n seen 64");
         uint64_t iseen = 0;
         fread(&iseen, sizeof(uint64_t), 1, fp);
         *net->seen = iseen;
     }
     else {
-        printf("\n seen 32");
+        // printf("\n seen 32");
         uint32_t iseen = 0;
         fread(&iseen, sizeof(uint32_t), 1, fp);
         *net->seen = iseen;
     }
     *net->cur_iteration = get_current_batch(*net);
-    printf(", trained: %.0f K-images (%.0f Kilo-batches_64) \n", (float)(*net->seen / 1000), (float)(*net->seen / 64000));
+    // printf(", trained: %.0f K-images (%.0f Kilo-batches_64) \n", (float)(*net->seen / 1000), (float)(*net->seen / 64000));
     int transpose = (major > 1000) || (minor > 1000);
 
     int i;
@@ -2366,7 +2377,7 @@ void load_weights_upto(network *net, char *filename, int cutoff)
         }
         if (feof(fp)) break;
     }
-    fprintf(stderr, "Done! Loaded %d layers from weights-file \n", i);
+    // fprintf(stderr, "Done! Loaded %d layers from weights-file \n", i);
     fclose(fp);
 }
 
@@ -2380,7 +2391,7 @@ network *load_network_custom(char *cfg, char *weights, int clear, int batch)
 {
     printf(" Try to load cfg: %s, weights: %s, clear = %d \n", cfg, weights, clear);
     network* net = (network*)xcalloc(1, sizeof(network));
-    *net = parse_network_cfg_custom(cfg, batch, 1);
+    *net = parse_network_cfg_custom(cfg, batch, 1, device);
     if (weights && weights[0] != 0) {
         printf(" Try to load weights: %s \n", weights);
         load_weights(net, weights);

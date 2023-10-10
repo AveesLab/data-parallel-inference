@@ -9,6 +9,11 @@
 #include "demo.h"
 #include "option_list.h"
 
+#include <pthread.h>
+#define _GNU_SOURCE
+#include <sched.h>
+#include <unistd.h>
+
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
 typedef int (*__compar_fn_t)(const void*, const void*);
@@ -18,9 +23,22 @@ typedef __compar_fn_t comparison_fn_t;
 #endif
 
 #include "http_stream.h"
+#include "detector.h"
+
+#ifdef GPU
+    static int device = 1;
+#else
+    static int device = 0;
+#endif
 
 int check_mistakes = 0;
-
+int num_exp;
+int core_id;
+int num_blas;
+int num_thread;
+int num_process;
+int gLayer;
+int rLayer;
 static int coco_ids[] = { 1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90 };
 
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, float thresh, float iou_thresh, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path, int mAP_epochs)
@@ -43,7 +61,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         cuda_set_device(gpus[0]);
         printf(" Prepare additional network for mAP calculation...\n");
-        net_map = parse_network_cfg_custom(cfgfile, 1, 1);
+        net_map = parse_network_cfg_custom(cfgfile, 1, 1, device);
         net_map.benchmark_layers = benchmark_layers;
         const int net_classes = net_map.layers[net_map.n - 1].classes;
 
@@ -654,7 +672,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     int *map = 0;
     if (mapf) map = read_map(mapf);
 
-    network net = parse_network_cfg_custom(cfgfile, 1, 1);    // set batch=1
+    network net = parse_network_cfg_custom(cfgfile, 1, 1, device);    // set batch=1
     if (weightfile) {
         load_weights(&net, weightfile);
     }
@@ -845,7 +863,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
 
 void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
 {
-    network net = parse_network_cfg_custom(cfgfile, 1, 1);    // set batch=1
+    network net = parse_network_cfg_custom(cfgfile, 1, 1, device);    // set batch=1
     if (weightfile) {
         load_weights(&net, weightfile);
     }
@@ -963,7 +981,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free_network_recurrent_state(*existing_net);
     }
     else {
-        net = parse_network_cfg_custom(cfgfile, 1, 1);    // set batch=1
+        net = parse_network_cfg_custom(cfgfile, 1, 1, device);    // set batch=1
         if (weightfile) {
             load_weights(&net, weightfile);
         }
@@ -1624,17 +1642,49 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
     getchar();
 }
 
-
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
     float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile, int letter_box, int benchmark_layers)
 {
+    // __CPU AFFINITY SETTING__
+    int core_idx = 1; // cpu core index
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_idx, &cpuset);
+    int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    if (ret != 0) {
+        fprintf(stderr, "pthread_setaffinity_np() failed \n");
+        exit(0);
+    } 
+
     list *options = read_data_cfg(datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
     int names_size = 0;
-    char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list);
+    char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list)
+
+    char buff[256];
+    char *input = buff;
 
     image **alphabet = load_alphabet();
-    network net = parse_network_cfg_custom(cfgfile, 1, 1); // set batch=1
+
+    float nms = .45;    // 0.4F
+    double time;
+
+    int top = 5;
+    int nboxes, index, i, j, k = 0;
+    int* indexes = (int*)xcalloc(top, sizeof(int));
+
+    image im, resized, cropped;
+    float *X, *predictions;
+    detection *dets;
+
+    char *target_model = "yolo";
+    int object_detection = strstr(cfgfile, target_model);
+
+    int device = 0; // Choose CPU or GPU
+
+    network net = parse_network_cfg_custom(cfgfile, 1, 1, device); // set batch=1
+    layer l = net.layers[net.n - 1];
+
     if (weightfile) {
         load_weights(&net, weightfile);
     }
@@ -1642,139 +1692,60 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     net.benchmark_layers = benchmark_layers;
     fuse_conv_batchnorm(net);
     calculate_binary_weights(net);
-    if (net.layers[net.n - 1].classes != names_size) {
-        printf("\n Error: in the file %s number of names %d that isn't equal to classes=%d in the file %s \n",
-            name_list, names_size, net.layers[net.n - 1].classes, cfgfile);
-        if (net.layers[net.n - 1].classes > names_size) getchar();
-    }
+
     srand(2222222);
-    char buff[256];
-    char *input = buff;
-    char *json_buf = NULL;
-    int json_image_id = 0;
-    FILE* json_file = NULL;
-    if (outfile) {
-        json_file = fopen(outfile, "wb");
-        if(!json_file) {
-            error("fopen failed", DARKNET_LOC);
-        }
-        char *tmp = "[\n";
-        fwrite(tmp, sizeof(char), strlen(tmp), json_file);
-    }
-    int j;
-    float nms = .45;    // 0.4F
+
+    if (filename) strncpy(input, filename, 256);
+    else printf("Error! File is not exist.");
+
     while (1) {
-        if (filename) {
-            strncpy(input, filename, 256);
-            if (strlen(input) > 0)
-                if (input[strlen(input) - 1] == 0x0d) input[strlen(input) - 1] = 0;
-        }
-        else {
-            printf("Enter Image Path: ");
-            fflush(stdout);
-            input = fgets(input, 256, stdin);
-            if (!input) break;
-            strtok(input, "\n");
-        }
-        //image im;
-        //image sized = load_image_resize(input, net.w, net.h, net.c, &im);
-        image im = load_image(input, 0, 0, net.c);
-        image sized;
-        if(letter_box) sized = letterbox_image(im, net.w, net.h);
-        else sized = resize_image(im, net.w, net.h);
+        // __Preprocess__
+        im = load_image(input, 0, 0, net.c);
+        resized = resize_min(im, net.w);
+        cropped = crop_image(resized, (resized.w - net.w)/2, (resized.h - net.h)/2, net.w, net.h);
+        X = cropped.data;
 
-        layer l = net.layers[net.n - 1];
-        int k;
-        for (k = 0; k < net.n; ++k) {
-            layer lk = net.layers[k];
-            if (lk.type == YOLO || lk.type == GAUSSIAN_YOLO || lk.type == REGION) {
-                l = lk;
-                printf(" Detection layer: %d - type = %d \n", k, l.type);
-            }
-        }
+        time = get_time_point();
+        
+        // __Inference__
+        if (device) predictions = network_predict(net, X);
+        else predictions = network_predict_cpu(net, X);
 
-        //box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
-        //float **probs = calloc(l.w*l.h*l.n, sizeof(float*));
-        //for(j = 0; j < l.w*l.h*l.n; ++j) probs[j] = (float*)xcalloc(l.classes, sizeof(float));
-
-        float *X = sized.data;
-
-        //time= what_time_is_it_now();
-        double time = get_time_point();
-        network_predict(net, X);
-        //network_predict_image(&net, im); letterbox = 1;
         printf("%s: Predicted in %lf milli-seconds.\n", input, ((double)get_time_point() - time) / 1000);
-        //printf("%s: Predicted in %f seconds.\n", input, (what_time_is_it_now()-time));
 
-        int nboxes = 0;
-        detection *dets = get_network_boxes(&net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
-        if (nms) {
-            if (l.nms_kind == DEFAULT_NMS) do_nms_sort(dets, nboxes, l.classes, nms);
-            else diounms_sort(dets, nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
-        }
-        draw_detections_v3(im, dets, nboxes, thresh, names, alphabet, l.classes, ext_output);
+        // __Postprecess__
+        // __NMS & TOP acccuracy__
+        if (object_detection) {
+            dets = get_network_boxes(&net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
+            if (nms) {
+                if (l.nms_kind == DEFAULT_NMS) do_nms_sort(dets, nboxes, l.classes, nms);
+                else diounms_sort(dets, nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
+            }
+            draw_detections_v3(im, dets, nboxes, thresh, names, alphabet, l.classes, ext_output);
+        } // yolo model
+        else {
+            if(net.hierarchy) hierarchy_predictions(predictions, net.outputs, net.hierarchy, 0);
+            top_k(predictions, net.outputs, top, indexes);
+            for(i = 0; i < top; ++i){
+                index = indexes[i];
+                if(net.hierarchy) printf("%d, %s: %f, parent: %s \n",index, names[index], predictions[index], (net.hierarchy->parent[index] >= 0) ? names[net.hierarchy->parent[index]] : "Root");
+                else printf("%s: %f\n",names[index], predictions[index]);
+            }
+        } // classifier model
+
+        // __Display__
         save_image(im, "predictions");
         if (!dont_show) {
             show_image(im, "predictions");
+            wait_key_cv(1);
         }
-
-        if (json_file) {
-            if (json_buf) {
-                char *tmp = ", \n";
-                fwrite(tmp, sizeof(char), strlen(tmp), json_file);
-            }
-            ++json_image_id;
-            json_buf = detection_to_json(dets, nboxes, l.classes, names, json_image_id, input);
-
-            fwrite(json_buf, sizeof(char), strlen(json_buf), json_file);
-            free(json_buf);
-        }
-
-        // pseudo labeling concept - fast.ai
-        if (save_labels)
-        {
-            char labelpath[4096];
-            replace_image_to_label(input, labelpath);
-
-            FILE* fw = fopen(labelpath, "wb");
-            int i;
-            for (i = 0; i < nboxes; ++i) {
-                char buff[1024];
-                int class_id = -1;
-                float prob = 0;
-                for (j = 0; j < l.classes; ++j) {
-                    if (dets[i].prob[j] > thresh && dets[i].prob[j] > prob) {
-                        prob = dets[i].prob[j];
-                        class_id = j;
-                    }
-                }
-                if (class_id >= 0) {
-                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h);
-                    fwrite(buff, sizeof(char), strlen(buff), fw);
-                }
-            }
-            fclose(fw);
-        }
-
-        free_detections(dets, nboxes);
-        free_image(im);
-        free_image(sized);
-
-        if (!dont_show) {
-            wait_until_press_key_cv();
-            destroy_all_windows_cv();
-        }
-
-        if (filename) break;
-    }
-
-    if (json_file) {
-        char *tmp = "\n]";
-        fwrite(tmp, sizeof(char), strlen(tmp), json_file);
-        fclose(json_file);
     }
 
     // free memory
+    free_detections(dets, nboxes);
+    free_image(im);
+    free_image(cropped);
+
     free_ptrs((void**)names, net.layers[net.n - 1].classes);
     free_list_contents_kvp(options);
     free_list(options);
@@ -1957,7 +1928,15 @@ void draw_object(char *datacfg, char *cfgfile, char *weightfile, char *filename,
 
 void run_detector(int argc, char **argv)
 {
+    num_exp = find_int_arg(argc, argv, "-num_exp", 1);
+    core_id = find_int_arg(argc, argv, "-core_id", 1);
+    num_blas = find_int_arg(argc, argv, "-num_blas", 1);
+    num_thread = find_int_arg(argc, argv, "-num_thread", 1);
+    num_process = find_int_arg(argc, argv, "-num_process", 1);
+    gLayer = find_int_arg(argc, argv, "-glayer", 1);
+    rLayer = find_int_arg(argc, argv, "-rlayer", 1);
     int dont_show = find_arg(argc, argv, "-dont_show");
+    int theoretical_exp = find_arg(argc, argv, "-theoretical_exp");
     int benchmark = find_arg(argc, argv, "-benchmark");
     int benchmark_layers = find_arg(argc, argv, "-benchmark_layers");
     //if (benchmark_layers) benchmark = 1;
@@ -2030,6 +2009,16 @@ void run_detector(int argc, char **argv)
             if (weights[strlen(weights) - 1] == 0x0d) weights[strlen(weights) - 1] = 0;
     char *filename = (argc > 6) ? argv[6] : 0;
     if (0 == strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "sequential")) sequential(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "sequential-multiblas")) sequential_multiblas(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "data-parallel")) data_parallel(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "data-parallel-mp")) data_parallel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+#ifdef GPU
+    else if (0 == strcmp(argv[2], "gpu-accel")) gpu_accel(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "gpu-accel-mp")) gpu_accel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "cpu-reclaiming")) cpu_reclaiming(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "cpu-reclaiming-mp")) cpu_reclaiming_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+#endif
     else if (0 == strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show, calc_map, thresh, iou_thresh, mjpeg_port, show_imgs, benchmark_layers, chart_path, mAP_epochs);
     else if (0 == strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if (0 == strcmp(argv[2], "recall")) validate_detector_recall(datacfg, cfg, weights);

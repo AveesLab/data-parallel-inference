@@ -799,6 +799,7 @@ typedef struct network {
     float *truth;
     float *delta;
     float *workspace;
+    float *workspace_cpu;
     int train;
     int index;
     float *cost;
@@ -1031,6 +1032,7 @@ LIB_API void diounms_sort(detection *dets, int total, int classes, float thresh,
 
 // network.h
 LIB_API float *network_predict(network net, float *input);
+LIB_API float *network_predict_cpu(network net, float *input);
 LIB_API float *network_predict_ptr(network *net, float *input);
 #ifdef CUDA_OPENGL_INTEGRATION
 LIB_API float *network_predict_gl_texture(network *net, uint32_t texture_id);
@@ -1118,6 +1120,9 @@ LIB_API int fill_remaining_id(detection *new_dets, int new_dets_num, int new_tra
 
 // gemm.h
 LIB_API void init_cpu();
+
+// detector.h
+double get_time_in_ms(void);
 
 #ifdef __cplusplus
 }
