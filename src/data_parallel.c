@@ -23,7 +23,9 @@
 #endif
 #endif
 
-static int coreIDOrder[MAXCORES] = {3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11};
+pthread_barrier_t barrier;
+
+static int coreIDOrder[MAXCORES] = {0, 3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11};
 
 typedef struct thread_data_t{
     char *datacfg;
@@ -59,6 +61,8 @@ static double e_postprocess[1000];
 static double execution_time[1000];
 static double frame_rate[1000];
 
+static int test;
+static float avg_execution_time;
 
 #ifdef MEASURE
 static int compare(const void *a, const void *b) {
@@ -167,7 +171,7 @@ static void threadFunc(thread_data_t data)
     // __CPU AFFINITY SETTING__
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(coreIDOrder[data.thread_id-1], &cpuset); // cpu core index
+    CPU_SET(coreIDOrder[data.thread_id], &cpuset); // cpu core index
 
     int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
     if (ret != 0) {
@@ -217,15 +221,32 @@ static void threadFunc(thread_data_t data)
     if (data.filename) strncpy(input, data.filename, 256);
     else printf("Error! File is not exist.");
 
+    // pthread_barrier_wait(&barrier);
+
+    // if (!test) {
+    //     usleep(avg_execution_time * data.thread_id / 11 * 1000);
+    //     printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
+    // }
+
     for (i = 0; i < num_exp; i++) {
         
+        if (i == 3) {
+            pthread_barrier_wait(&barrier);
+
+            if (!test) {
+                usleep(avg_execution_time * data.thread_id / 11 * 1000);
+                printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
+            }
+        }
+
+
 #ifdef MEASURE
         int count = i * num_thread + data.thread_id - 1;
 #endif
 
 #ifdef NVTX
         char task[100];
-        sprintf(task, "Task (cpu: %d)", data.thread_id);
+        sprintf(task, "Task%d (cpu: %d)", data.thread_id, sched_getcpu());
         nvtxRangeId_t nvtx_task;
         nvtx_task = nvtxRangeStartA(task);
 #endif
@@ -339,13 +360,16 @@ void data_parallel(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
     printf("\n\nData-Parallel with %d threads \n", num_thread);
 
-    pthread_t threads[num_thread];
+    pthread_t threads[MAXCORES];
     int rc;
     int i;
 
-    thread_data_t data[num_thread];
+    thread_data_t data[MAXCORES];
 
-    for (i = 0; i < num_thread; i++) {
+    pthread_barrier_init(&barrier, NULL, num_thread);
+
+    test = 1;
+    for (i = 1; i <= num_thread; i++) {
         data[i].datacfg = datacfg;
         data[i].cfgfile = cfgfile;
         data[i].weightfile = weightfile;
@@ -358,7 +382,7 @@ void data_parallel(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         data[i].outfile = outfile;
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
-        data[i].thread_id = i + 1;
+        data[i].thread_id = i;
         rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
         if (rc) {
             printf("Error: Unable to create thread, %d\n", rc);
@@ -366,10 +390,46 @@ void data_parallel(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         }
     }
 
-    for (i = 0; i < num_thread; i++) {
+    for (i = 1; i <= num_thread; i++) {
         pthread_join(threads[i], NULL);
     }
 
+    test = 0;
+    avg_execution_time = 0;
+    int startIdx = 10;
+    for (i = startIdx; i < num_thread * num_exp; i++) {
+        avg_execution_time += execution_time[i] / (num_thread * num_exp - startIdx);
+    }
+
+    printf("avg execution time : %0.2f \n", avg_execution_time);
+
+    pthread_barrier_init(&barrier, NULL, num_thread);
+
+    for (i = 1; i <= num_thread; i++) {
+        data[i].datacfg = datacfg;
+        data[i].cfgfile = cfgfile;
+        data[i].weightfile = weightfile;
+        data[i].filename = filename;
+        data[i].thresh = thresh;
+        data[i].hier_thresh = hier_thresh;
+        data[i].dont_show = dont_show;
+        data[i].ext_output = ext_output;
+        data[i].save_labels = save_labels;
+        data[i].outfile = outfile;
+        data[i].letter_box = letter_box;
+        data[i].benchmark_layers = benchmark_layers;
+        data[i].thread_id = i;
+        rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
+        if (rc) {
+            printf("Error: Unable to create thread, %d\n", rc);
+            exit(-1);
+        }
+    }
+
+    for (i = 1; i <= num_thread; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
 #ifdef MEASURE
     char file_path[256] = "measure/";
 
