@@ -221,13 +221,6 @@ static void threadFunc(thread_data_t data)
     if (data.filename) strncpy(input, data.filename, 256);
     else printf("Error! File is not exist.");
 
-    // pthread_barrier_wait(&barrier);
-
-    // if (!test) {
-    //     usleep(avg_execution_time * data.thread_id / 11 * 1000);
-    //     printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
-    // }
-
     for (i = 0; i < num_exp; i++) {
         
         if (i == 3) {
@@ -238,7 +231,6 @@ static void threadFunc(thread_data_t data)
                 printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
             }
         }
-
 
 #ifdef MEASURE
         int count = i * num_thread + data.thread_id - 1;
@@ -396,7 +388,7 @@ void data_parallel(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
     test = 0;
     avg_execution_time = 0;
-    int startIdx = 10;
+    int startIdx = 10 * num_thread;
     for (i = startIdx; i < num_thread * num_exp; i++) {
         avg_execution_time += execution_time[i] / (num_thread * num_exp - startIdx);
     }
