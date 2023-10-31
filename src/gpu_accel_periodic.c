@@ -27,7 +27,6 @@ pthread_barrier_t barrier;
 
 static int coreIDOrder[MAXCORES] = {0, 3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11};
 
-int skip_layers[1000] = {0, };
 static pthread_mutex_t mutex_gpu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static int current_thread = 1;
@@ -51,6 +50,9 @@ typedef struct thread_data_t{
 
 #ifdef MEASURE
 static double core_id_list[1000];
+
+static double start_task[1000];
+
 static double start_preprocess[1000];
 static double end_preprocess[1000];
 static double e_preprocess[1000];
@@ -74,7 +76,10 @@ static double e_postprocess[1000];
 #endif
 
 static double execution_time[1000];
+static double total_time[1000];
 static double frame_rate[1000];
+
+static float period;
 
 static int test;
 static float avg_execution_time;
@@ -285,7 +290,7 @@ static void threadFunc(thread_data_t data)
             pthread_barrier_wait(&barrier);
 
             if (!test) {
-                usleep(sleep_time * 1000);
+                usleep(avg_execution_time * data.thread_id / 11 * 1000);
                 printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
             }
         }
@@ -293,6 +298,8 @@ static void threadFunc(thread_data_t data)
 #ifdef MEASURE
         int count = i * num_thread + data.thread_id - 1;
 #endif
+
+        start_task[count] = get_time_in_ms();
 
 #ifdef NVTX
         char task[100];
@@ -312,7 +319,7 @@ static void threadFunc(thread_data_t data)
         while(data.thread_id != current_thread) {
             pthread_cond_wait(&cond, &mutex_gpu);
         }
-        
+
         time = get_time_in_ms();
         // __Preprocess__
 #ifdef MEASURE
@@ -463,6 +470,11 @@ static void threadFunc(thread_data_t data)
             }
         }
 
+        // free memory
+        free_image(im);
+        free_image(resized);
+        free_image(cropped);
+        
         // __Display__
         // if (!data.dont_show) {
         //     show_image(im, "predictions");
@@ -472,6 +484,7 @@ static void threadFunc(thread_data_t data)
 #ifdef MEASURE
         end_postprocess[count] = get_time_in_ms();
         e_postprocess[count] = end_postprocess[count] - start_postprocess[count];
+        total_time[count] = end_postprocess[count] - start_task[count];
         execution_time[count] = end_postprocess[count] - start_preprocess[count];
         core_id_list[count] = (double)sched_getcpu();
         // printf("\n%s: Predicted in %0.3f milli-seconds.\n", input, e_infer[count]);
@@ -481,14 +494,21 @@ static void threadFunc(thread_data_t data)
         printf("\n%s: Predicted in %0.3f milli-seconds. (%0.3lf fps)\n", input, execution_time[i], frame_rate[i]);
 #endif
 
-        // free memory
-        free_image(im);
-        free_image(resized);
-        free_image(cropped);
-
 #ifdef NVTX
         nvtxRangeEnd(nvtx_task);
 #endif
+
+        if ((period)&&(i > 3)) {
+            
+            if (total_time[count] < period) {
+                usleep(period - total_time[count]);
+            } else {
+                printf("end time : %0.2f, start time : %0.2f, ", end_postprocess[count], start_task[count]);
+                printf("period : %0.2f, elapsed time : %0.2f \n", period, total_time[count]);
+                printf("Warning: Execution time exceeded the period!\n");
+            }
+        }
+
     }
 
     // free memory
@@ -502,7 +522,7 @@ static void threadFunc(thread_data_t data)
 
 }
 
-void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
+void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
     float hier_thresh, int dont_show, int theoretical_exp, int theo_thread, int ext_output, int save_labels, char *outfile, int letter_box, int benchmark_layers)
 {
 
@@ -514,7 +534,7 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
 
     pthread_barrier_init(&barrier, NULL, num_thread);
     
-    printf("\n\nGPU-Accel with %d threads with %d gpu-layer\n", num_thread, gLayer);
+    printf("\n\nGPU-Accel-Periodic with %d threads with %d gpu-layer\n", num_thread, gLayer);
 
     test = 1;
     for (i = 1; i <= num_thread; i++) {
@@ -543,6 +563,7 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
     }
 
     test = 0;
+    period = 0;
     avg_execution_time = 0;
     int startIdx = 10 * num_thread;
     for (i = startIdx; i < num_thread * num_exp; i++) {
@@ -582,6 +603,46 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
         pthread_join(threads[i], NULL);
     }
 
+    test = 0;
+    period = 0;
+    startIdx = 10 * num_thread;
+    for (i = startIdx; i < num_thread * num_exp; i++) {
+        period = MAX(period, total_time[i]);
+    }
+
+    period = period * 1.01;
+    printf("\n\nmax execution time : %0.2f \n\n", period);
+    
+    sleep_time = MAX(period / num_thread, avg_gpu_infer_time);
+
+    pthread_barrier_init(&barrier, NULL, num_thread);
+
+    for (i = 1; i <= num_thread; i++) {
+        data[i].datacfg = datacfg;
+        data[i].cfgfile = cfgfile;
+        data[i].weightfile = weightfile;
+        data[i].filename = filename;
+        data[i].thresh = thresh;
+        data[i].hier_thresh = hier_thresh;
+        data[i].dont_show = dont_show;
+        data[i].ext_output = ext_output;
+        data[i].save_labels = save_labels;
+        data[i].outfile = outfile;
+        data[i].letter_box = letter_box;
+        data[i].benchmark_layers = benchmark_layers;
+        data[i].thread_id = i;
+        rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
+        if (rc) {
+            printf("Error: Unable to create thread, %d\n", rc);
+            exit(-1);
+        }
+    }
+
+    for (i = 1; i <= num_thread; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+
 #ifdef MEASURE
     char file_path[256] = "measure/";
 
@@ -590,25 +651,25 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
     model_name[strlen(cfgfile)-10] = '\0';
 
     if (theoretical_exp) {
-        if (theo_thread == 1) strcat(file_path, "gpu-accel_1thread/");
-        else if (theo_thread == 2) strcat(file_path, "gpu-accel_2thread/");
-        else if (theo_thread == 3) strcat(file_path, "gpu-accel_3thread/");
-        else if (theo_thread == 4) strcat(file_path, "gpu-accel_4thread/");
-        else if (theo_thread == 5) strcat(file_path, "gpu-accel_5thread/");
-        else if (theo_thread == 6) strcat(file_path, "gpu-accel_6thread/");
-        else if (theo_thread == 7) strcat(file_path, "gpu-accel_7thread/");
-        else if (theo_thread == 8) strcat(file_path, "gpu-accel_8thread/");
-        else if (theo_thread == 9) strcat(file_path, "gpu-accel_9thread/");
-        else if (theo_thread == 10) strcat(file_path, "gpu-accel_10thread/");
-        else if (theo_thread == 11) strcat(file_path, "gpu-accel_11thread/");
+        if (theo_thread == 1) strcat(file_path, "gpu-accel-periodic_1thread/");
+        else if (theo_thread == 2) strcat(file_path, "gpu-accel-periodic_2thread/");
+        else if (theo_thread == 3) strcat(file_path, "gpu-accel-periodic_3thread/");
+        else if (theo_thread == 4) strcat(file_path, "gpu-accel-periodic_4thread/");
+        else if (theo_thread == 5) strcat(file_path, "gpu-accel-periodic_5thread/");
+        else if (theo_thread == 6) strcat(file_path, "gpu-accel-periodic_6thread/");
+        else if (theo_thread == 7) strcat(file_path, "gpu-accel-periodic_7thread/");
+        else if (theo_thread == 8) strcat(file_path, "gpu-accel-periodic_8thread/");
+        else if (theo_thread == 9) strcat(file_path, "gpu-accel-periodic_9thread/");
+        else if (theo_thread == 10) strcat(file_path, "gpu-accel-periodic_10thread/");
+        else if (theo_thread == 11) strcat(file_path, "gpu-accel-periodic_11thread/");
         else printf("\nError: Please set -theo_thread {thread_num}\n");
     }
-    else strcat(file_path, "gpu-accel/");
+    else strcat(file_path, "gpu-accel-periodic/");
 
     strcat(file_path, model_name);
     strcat(file_path, "/");
 
-    strcat(file_path, "gpu-accel_");
+    strcat(file_path, "gpu-accel-periodic_");
 
     char gpu_portion[20];
     if (theoretical_exp && (theo_thread > 1)) sprintf(gpu_portion, "%03dglayer", gLayer);

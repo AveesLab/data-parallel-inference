@@ -2017,6 +2017,7 @@ void run_detector(int argc, char **argv)
     else if (0 == strcmp(argv[2], "data-parallel-mp")) data_parallel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
 #ifdef GPU
     else if (0 == strcmp(argv[2], "gpu-accel")) gpu_accel(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "gpu-accel-periodic")) gpu_accel_periodic(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
     else if (0 == strcmp(argv[2], "gpu-accel-reverse")) gpu_accel_reverse(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
     else if (0 == strcmp(argv[2], "gpu-accel-mp")) gpu_accel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
 #endif
