@@ -223,7 +223,7 @@ static void threadFunc(thread_data_t data)
 
     for (i = 0; i < num_exp; i++) {
         
-        if (i == 3) {
+        if (5) {
             pthread_barrier_wait(&barrier);
 
             if (!test) {

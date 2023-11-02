@@ -162,7 +162,7 @@ static int write_result(char *file_path)
 
     qsort(sum_measure_data, sizeof(sum_measure_data)/sizeof(sum_measure_data[0]), sizeof(sum_measure_data[0]), compare);
 
-    int startIdx = num_thread * 3; // Delete some ROWs
+    int startIdx = num_thread * 10; // Delete some ROWs
     double new_sum_measure_data[sizeof(sum_measure_data)/sizeof(sum_measure_data[0])-startIdx][sizeof(sum_measure_data[0])];
 
     int newIndex = 0;
@@ -281,7 +281,7 @@ static void threadFunc(thread_data_t data)
 
     for (i = 0; i < num_exp; i++) {
 
-        if (i == 3) {
+        if (i == 5) {
             pthread_barrier_wait(&barrier);
 
             if (!test) {
@@ -546,8 +546,8 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
     avg_execution_time = 0;
     int startIdx = 10 * num_thread;
     for (i = startIdx; i < num_thread * num_exp; i++) {
-        avg_execution_time += execution_time[i] / (num_thread * num_exp - startIdx);
-        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * num_exp - startIdx);
+        avg_execution_time += execution_time[i] / (num_thread * num_exp - startIdx + 1);
+        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * num_exp - startIdx + 1);
     }
 
     printf("avg execution time : %0.2f \n", avg_execution_time);
