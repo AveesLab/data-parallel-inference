@@ -46,6 +46,7 @@ typedef struct thread_data_t{
     int benchmark_layers;
     int thread_id;
     int num_thread;
+    int num_exp;
 } thread_data_t;
 
 #ifdef MEASURE
@@ -173,7 +174,7 @@ static int write_result(char *file_path)
 
     qsort(sum_measure_data, sizeof(sum_measure_data)/sizeof(sum_measure_data[0]), sizeof(sum_measure_data[0]), compare);
 
-    int startIdx = num_thread * 10; // Delete some ROWs
+    int startIdx = num_thread * 0; // Delete some ROWs
     double new_sum_measure_data[sizeof(sum_measure_data)/sizeof(sum_measure_data[0])-startIdx][sizeof(sum_measure_data[0])];
 
     int newIndex = 0;
@@ -291,22 +292,21 @@ static void threadFunc(thread_data_t data)
     if (data.filename) strncpy(input, data.filename, 256);
     else printf("Error! File is not exist.");
 
-    for (i = 0; i < num_exp; i++) {
-
-        if (i == 5) {
-            pthread_barrier_wait(&barrier);
-
-            if (!test) {
-                usleep(sleep_time * (data.thread_id - 1) * 1000);
-                printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), avg_execution_time * data.thread_id / 11);
-            }
-        }
+    for (i = 0; i < data.num_exp; i++) {
 
 #ifdef MEASURE
         int count = i * num_thread + data.thread_id - 1;
+        start_task[count] = get_time_in_ms();
 #endif
 
-        start_task[count] = get_time_in_ms();
+        if (i == 5) {
+            if (!test) {
+                pthread_barrier_wait(&barrier);
+                // printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), sleep_time * (data.thread_id - 1));
+                usleep(sleep_time * (data.thread_id - 1) * 1000);
+            }
+        }
+
 
 #ifdef NVTX
         char task[100];
@@ -428,12 +428,6 @@ static void threadFunc(thread_data_t data)
             } while(work_time < remaining_time);
         }
 
-#ifdef MEASURE
-        end_gpu_infer[count] = get_time_in_ms();
-        waiting_gpu[count] = start_gpu_infer[count] - start_gpu_waiting[count];
-        e_gpu_infer[count] = end_gpu_infer[count] - start_gpu_infer[count];
-#endif
-
         if (data.thread_id == num_thread) {
             current_thread = 1;
         } else {
@@ -533,9 +527,9 @@ static void threadFunc(thread_data_t data)
         nvtxRangeEnd(nvtx_task);
 #endif
 
-        if ((period)&&(i > 3)) {
-            if (total_time[count] < period) {
-                usleep(period - total_time[count]);
+        if ((period)&&(i >= 5)) {
+            if (execution_time[count] < period) {
+                usleep((period - execution_time[count]) * 1000);
             } else {
                 printf("[%d] gpu infer time : %0.2f, ", count, e_gpu_infer[count]);
                 printf("period : %0.2f, total time : %0.2f, execution time : %0.2f \n", period, total_time[count], execution_time[count]);
@@ -590,6 +584,7 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
         data[i].thread_id = i;
+        data[i].num_exp = 20;
         rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
         if (rc) {
             printf("Error: Unable to create thread, %d\n", rc);
@@ -606,10 +601,10 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     max_gpu_infer = 0;
     avg_execution_time = 0;
     int startIdx = 10 * num_thread;
-    for (i = startIdx; i < num_thread * num_exp; i++) {
+    for (i = startIdx; i < num_thread * 20; i++) {
         max_gpu_infer = MAX(max_gpu_infer, e_preprocess[i] + e_gpu_infer[i]);
-        avg_execution_time += execution_time[i] / (num_thread * num_exp - startIdx + 1);
-        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * num_exp - startIdx + 1);
+        avg_execution_time += execution_time[i] / (num_thread * 20 - startIdx + 1);
+        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * 20 - startIdx + 1);
     }
 
     printf("avg execution time : %0.2f \n", avg_execution_time);
@@ -633,6 +628,7 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
         data[i].thread_id = i;
+        data[i].num_exp = 20;
         rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
         if (rc) {
             printf("Error: Unable to create thread, %d\n", rc);
@@ -650,10 +646,10 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     avg_gpu_infer_time = 0;
     startIdx = 10 * num_thread;
 
-    for (i = startIdx; i < num_thread * num_exp; i++) {
-        period = MAX(period, total_time[i]);
-        avg_execution_time += total_time[i] / (num_thread * num_exp - startIdx + 1);
-        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * num_exp - startIdx + 1);
+    for (i = startIdx; i < num_thread * 20; i++) {
+    period = MAX(period, total_time[i]);
+        avg_execution_time += total_time[i] / (num_thread * 20 - startIdx + 1);
+        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * 20 - startIdx + 1);
         max_gpu_infer = MAX(max_gpu_infer, e_preprocess[i] + e_gpu_infer[i]);
     }
 
@@ -685,6 +681,7 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
         data[i].letter_box = letter_box;
         data[i].benchmark_layers = benchmark_layers;
         data[i].thread_id = i;
+        data[i].num_exp = num_exp;
         rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
         if (rc) {
             printf("Error: Unable to create thread, %d\n", rc);
