@@ -83,12 +83,14 @@ static double total_time[1000];
 static double frame_rate[1000];
 
 static float period;
+static float wcet;
 
 static int test;
 static float avg_execution_time;
 static float avg_gpu_infer_time;
 static float max_gpu_infer;
 static float sleep_time;
+static float initialize_time;
 
 static double average(double arr[]){
     double sum;
@@ -174,7 +176,7 @@ static int write_result(char *file_path)
 
     qsort(sum_measure_data, sizeof(sum_measure_data)/sizeof(sum_measure_data[0]), sizeof(sum_measure_data[0]), compare);
 
-    int startIdx = num_thread * 0; // Delete some ROWs
+    int startIdx = num_thread * 5; // Delete some ROWs
     double new_sum_measure_data[sizeof(sum_measure_data)/sizeof(sum_measure_data[0])-startIdx][sizeof(sum_measure_data[0])];
 
     int newIndex = 0;
@@ -302,8 +304,8 @@ static void threadFunc(thread_data_t data)
         if (i == 5) {
             if (!test) {
                 pthread_barrier_wait(&barrier);
-                // printf("[%d][%d] sleep time : %0.2f \n", data.thread_id, sched_getcpu(), sleep_time * (data.thread_id - 1));
-                usleep(sleep_time * (data.thread_id - 1) * 1000);
+                printf("[%d][%d] initialize time : %0.2f \n", data.thread_id, sched_getcpu(), initialize_time * (data.thread_id - 1));
+                usleep(initialize_time * (data.thread_id - 1) * 1000);
             }
         }
 
@@ -416,7 +418,7 @@ static void threadFunc(thread_data_t data)
 #endif
 
         // Busy wait for the remaining time
-        double remaining_time = max_gpu_infer - e_gpu_infer[count];
+        double remaining_time = max_gpu_infer - (get_time_in_ms() - start_preprocess[count]);
         double wait_start, wait_end, work_time;
         
         if (remaining_time > 0) {
@@ -527,14 +529,16 @@ static void threadFunc(thread_data_t data)
         nvtxRangeEnd(nvtx_task);
 #endif
 
-        if ((period)&&(i >= 5)) {
-            if (execution_time[count] < period) {
-                usleep((period - execution_time[count]) * 1000);
+        if ((wcet)&&(i >= 5)) {
+            if (execution_time[count] < wcet) {
+                usleep((wcet - execution_time[count]) * 1000);
             } else {
                 printf("[%d] gpu infer time : %0.2f, ", count, e_gpu_infer[count]);
-                printf("period : %0.2f, total time : %0.2f, execution time : %0.2f \n", period, total_time[count], execution_time[count]);
+                printf("wcet : %0.2f, sleep time : %0.2f, execution time : %0.2f \n", wcet, sleep_time, execution_time[count]);
             }
         }
+
+        usleep(sleep_time * 1000);
 
 #ifdef MEASURE
         end_task[count] = get_time_in_ms();
@@ -554,7 +558,7 @@ static void threadFunc(thread_data_t data)
 
 }
 
-void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
+void jitter_compensation_pre(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
     float hier_thresh, int dont_show, int theoretical_exp, int theo_thread, int ext_output, int save_labels, char *outfile, int letter_box, int benchmark_layers)
 {
 
@@ -566,7 +570,7 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
 
     pthread_barrier_init(&barrier, NULL, num_thread);
     
-    printf("\n\nGPU-Accel-Periodic with %d threads with %d gpu-layer\n", num_thread, gLayer);
+    printf("\n\nJitter-Compensation-Pre with %d threads with %d gpu-layer\n", num_thread, gLayer);
 
     test = 1;
     for (i = 1; i <= num_thread; i++) {
@@ -596,7 +600,8 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     }
 
     test = 0;
-    period = 0;
+    wcet = 0;
+    sleep_time = 0;
     max_gpu_infer = 0;
     avg_execution_time = 0;
     int startIdx = 10 * num_thread;
@@ -609,7 +614,7 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     printf("avg execution time : %0.2f \n", avg_execution_time);
     printf("avg gpu inference time : %0.2f \n", avg_gpu_infer_time);
 
-    sleep_time = MAX(max_gpu_infer, avg_execution_time / num_thread);
+    initialize_time = MAX(max_gpu_infer, avg_execution_time / num_thread) * 1.02;
 
     pthread_barrier_init(&barrier, NULL, num_thread);
 
@@ -640,29 +645,34 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     }
 
     test = 0;
-    period = 0;
+    wcet = 0;
+    sleep_time = 0;
     avg_execution_time = 0;
     avg_gpu_infer_time = 0;
     startIdx = 10 * num_thread;
-
     for (i = startIdx; i < num_thread * 20; i++) {
-    period = MAX(period, total_time[i]);
-        avg_execution_time += total_time[i] / (num_thread * 20 - startIdx + 1);
-        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * 20 - startIdx + 1);
+        period = MAX(period, total_time[i]);
+        wcet = MAX(wcet, execution_time[i]);
         max_gpu_infer = MAX(max_gpu_infer, e_preprocess[i] + e_gpu_infer[i]);
+
+        avg_execution_time += execution_time[i] / (num_thread * 20 - startIdx + 1);
+        avg_gpu_infer_time += (e_preprocess[i] + e_gpu_infer[i]) / (num_thread * 20 - startIdx + 1);
     }
-
-    max_gpu_infer = max_gpu_infer * 1.02;
-    period = period - avg_gpu_infer_time + max_gpu_infer;
-    period = MAX(period, max_gpu_infer * 11);
-    period = period * 1.02;
-
+    
+    printf("\nWCET : %0.2f \n", wcet);
+    wcet = wcet - avg_gpu_infer_time + max_gpu_infer;
+    period = MAX(wcet, max_gpu_infer * 11);
+    
     printf("\n\navg execution time : %0.2f \n", avg_execution_time);
-    printf("\nmax execution time : %0.2f \n", period);
+    printf("\nWCET : %0.2f \n", wcet);
+    printf("\nPeriod : %0.2f \n", period);
     printf("\navg gpu inference time : %0.2f \n", avg_gpu_infer_time);
-    printf("\nmax gpu inference time : %0.2f \n\n", max_gpu_infer);
+    printf("\nmax gpu inference time : %0.2f \n", max_gpu_infer);
 
-    sleep_time = MAX(period / num_thread, max_gpu_infer);
+    initialize_time = MAX(period / num_thread, max_gpu_infer);
+    printf("\ninitialize time : %0.2f \n", initialize_time);
+    sleep_time = initialize_time * num_thread - wcet;
+    printf("\nsleep time : %0.2f \n\n", sleep_time);
 
     pthread_barrier_init(&barrier, NULL, num_thread);
 
@@ -701,25 +711,25 @@ void gpu_accel_periodic(char *datacfg, char *cfgfile, char *weightfile, char *fi
     model_name[strlen(cfgfile)-10] = '\0';
 
     if (theoretical_exp) {
-        if (theo_thread == 1) strcat(file_path, "gpu-accel-periodic_1thread/");
-        else if (theo_thread == 2) strcat(file_path, "gpu-accel-periodic_2thread/");
-        else if (theo_thread == 3) strcat(file_path, "gpu-accel-periodic_3thread/");
-        else if (theo_thread == 4) strcat(file_path, "gpu-accel-periodic_4thread/");
-        else if (theo_thread == 5) strcat(file_path, "gpu-accel-periodic_5thread/");
-        else if (theo_thread == 6) strcat(file_path, "gpu-accel-periodic_6thread/");
-        else if (theo_thread == 7) strcat(file_path, "gpu-accel-periodic_7thread/");
-        else if (theo_thread == 8) strcat(file_path, "gpu-accel-periodic_8thread/");
-        else if (theo_thread == 9) strcat(file_path, "gpu-accel-periodic_9thread/");
-        else if (theo_thread == 10) strcat(file_path, "gpu-accel-periodic_10thread/");
-        else if (theo_thread == 11) strcat(file_path, "gpu-accel-periodic_11thread/");
+        if (theo_thread == 1) strcat(file_path, "jitter-compensation-pre_1thread/");
+        else if (theo_thread == 2) strcat(file_path, "jitter-compensation-pre_2thread/");
+        else if (theo_thread == 3) strcat(file_path, "jitter-compensation-pre_3thread/");
+        else if (theo_thread == 4) strcat(file_path, "jitter-compensation-pre_4thread/");
+        else if (theo_thread == 5) strcat(file_path, "jitter-compensation-pre_5thread/");
+        else if (theo_thread == 6) strcat(file_path, "jitter-compensation-pre_6thread/");
+        else if (theo_thread == 7) strcat(file_path, "jitter-compensation-pre_7thread/");
+        else if (theo_thread == 8) strcat(file_path, "jitter-compensation-pre_8thread/");
+        else if (theo_thread == 9) strcat(file_path, "jitter-compensation-pre_9thread/");
+        else if (theo_thread == 10) strcat(file_path, "jitter-compensation-pre_10thread/");
+        else if (theo_thread == 11) strcat(file_path, "jitter-compensation-pre_11thread/");
         else printf("\nError: Please set -theo_thread {thread_num}\n");
     }
-    else strcat(file_path, "gpu-accel-periodic/");
+    else strcat(file_path, "jitter-compensation-pre/");
 
     strcat(file_path, model_name);
     strcat(file_path, "/");
 
-    strcat(file_path, "gpu-accel-periodic_");
+    strcat(file_path, "jitter-compensation-pre_");
 
     char gpu_portion[20];
     if (theoretical_exp && (theo_thread > 1)) sprintf(gpu_portion, "%03dglayer", gLayer);

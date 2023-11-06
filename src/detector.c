@@ -37,6 +37,7 @@ int core_id;
 int num_blas;
 int num_thread;
 int num_process;
+int test_exp;
 int gLayer;
 int rLayer;
 static int coco_ids[] = { 1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90 };
@@ -1928,10 +1929,11 @@ void draw_object(char *datacfg, char *cfgfile, char *weightfile, char *filename,
 
 void run_detector(int argc, char **argv)
 {
-    num_exp = find_int_arg(argc, argv, "-num_exp", 1);
+    num_exp = find_int_arg(argc, argv, "-num_exp", 30);
+    test_exp = find_int_arg(argc, argv, "-test_exp", 20);
     core_id = find_int_arg(argc, argv, "-core_id", 1);
     num_blas = find_int_arg(argc, argv, "-num_blas", 1);
-    num_thread = find_int_arg(argc, argv, "-num_thread", 1);
+    num_thread = find_int_arg(argc, argv, "-num_thread", 11);
     num_process = find_int_arg(argc, argv, "-num_process", 1);
     gLayer = find_int_arg(argc, argv, "-glayer", 1);
     rLayer = find_int_arg(argc, argv, "-rlayer", 1);
@@ -2017,8 +2019,8 @@ void run_detector(int argc, char **argv)
     else if (0 == strcmp(argv[2], "data-parallel-mp")) data_parallel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
 #ifdef GPU
     else if (0 == strcmp(argv[2], "gpu-accel")) gpu_accel(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
-    else if (0 == strcmp(argv[2], "gpu-accel-periodic")) gpu_accel_periodic(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
-    else if (0 == strcmp(argv[2], "gpu-accel-reverse")) gpu_accel_reverse(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "jitter-compensation-pre")) jitter_compensation_pre(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
+    else if (0 == strcmp(argv[2], "jitter-compensation-gpu")) jitter_compensation_gpu(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, theoretical_exp, theo_thread, ext_output, save_labels, outfile, letter_box, benchmark_layers);
     else if (0 == strcmp(argv[2], "gpu-accel-mp")) gpu_accel_mp(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile, letter_box, benchmark_layers);
 #endif
     else if (0 == strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show, calc_map, thresh, iou_thresh, mjpeg_port, show_imgs, benchmark_layers, chart_path, mAP_epochs);
