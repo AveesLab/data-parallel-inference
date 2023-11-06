@@ -543,7 +543,6 @@ static void threadFunc(thread_data_t data)
 
     }
 
-
     // free memory
     free_detections(dets, nboxes);
     free_ptrs((void**)names, net.layers[net.n - 1].classes);
