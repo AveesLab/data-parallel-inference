@@ -235,10 +235,10 @@ static int write_result(char *file_path)
         
         int j;
         for (j = 0; j < num_network-1; j++) {
-            fprintf(fp, "%0.3f,", layers_time[i][j]);
+            fprintf(fp, "%0.3f,", layers_time[i + startIdx][j]);
         }
 
-        fprintf(fp, "%0.3f\n", layers_time[i][j]);
+        fprintf(fp, "%0.3f\n", layers_time[i + startIdx][j]);
     }
 
     
