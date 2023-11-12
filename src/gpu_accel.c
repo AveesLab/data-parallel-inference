@@ -79,6 +79,9 @@ static int optimal_core;
 static double execution_time[1000];
 static double execution_time_max[1000];
 
+static double layers_time[1000][400];
+static int num_network;
+
 static float avg_execution_time;
 static float avg_gpu_infer_time;
 static float max_gpu_infer_time;
@@ -185,7 +188,7 @@ static int write_result(char *file_path)
         newIndex++;
     }
 
-    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", 
+    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,", 
             "core_id", 
             "start_preprocess", "e_preprocess", "end_preprocess", 
             "start_infer", 
@@ -197,6 +200,15 @@ static int write_result(char *file_path)
             "execution_time", "execution_time_max", "execution_time_max_value",
             "cycle_time", "frame_rate",
             "optimal_core");
+
+    char layer_id[20];
+    for (i = 0; i < num_network-1; i++) {
+        sprintf(layer_id, "layer[%d]", i);
+        fprintf(fp, "%s,", layer_id);
+    }
+
+    sprintf(layer_id, "layer[%d]", i);
+    fprintf(fp, "%s\n", layer_id);
 
     double frame_rate = 0.0;
     double cycle_time = 0.0;
@@ -213,14 +225,22 @@ static int write_result(char *file_path)
         new_sum_measure_data[i][23] = frame_rate;
         new_sum_measure_data[i][24] = (double)optimal_core;
 
-        fprintf(fp, "%0.0f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.0f\n",  
+        fprintf(fp, "%0.0f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.0f,",  
                 new_sum_measure_data[i][0], new_sum_measure_data[i][1], new_sum_measure_data[i][2], new_sum_measure_data[i][3], 
                 new_sum_measure_data[i][4], new_sum_measure_data[i][5], new_sum_measure_data[i][6], new_sum_measure_data[i][7], 
                 new_sum_measure_data[i][8], new_sum_measure_data[i][9], new_sum_measure_data[i][10], new_sum_measure_data[i][11], 
                 new_sum_measure_data[i][12], new_sum_measure_data[i][13], new_sum_measure_data[i][14], new_sum_measure_data[i][15],
                 new_sum_measure_data[i][16], new_sum_measure_data[i][17], new_sum_measure_data[i][18], new_sum_measure_data[i][19],
                 new_sum_measure_data[i][20], new_sum_measure_data[i][21], new_sum_measure_data[i][22], new_sum_measure_data[i][23], new_sum_measure_data[i][24]);
+        
+        int j;
+        for (j = 0; j < num_network-1; j++) {
+            fprintf(fp, "%0.3f,", layers_time[i][j]);
+        }
+
+        fprintf(fp, "%0.3f\n", layers_time[i][j]);
     }
+
     
     fclose(fp);
 
@@ -289,6 +309,7 @@ static void threadFunc(thread_data_t data)
 
     network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
     layer l = net.layers[net.n - 1];
+    num_network = net.n;
 
     if (data.weightfile) {
         load_weights(&net, data.weightfile);
@@ -399,7 +420,14 @@ static void threadFunc(thread_data_t data)
                 fill_ongpu(l.outputs * l.batch, 0, l.delta_gpu, 1);
             }
 
+            double start_layer_time = get_time_in_ms();
+
             l.forward_gpu(l, state);
+            CHECK_CUDA(cudaStreamSynchronize(get_cuda_stream()));
+
+            layers_time[count][j] = get_time_in_ms() - start_layer_time;
+            printf("[%d] layer time : %0.3f \n", j, layers_time[count][j]);
+
             if (skip_layers[j]){
                 cuda_pull_array(l.output_gpu, l.output, l.outputs * l.batch);
             }
@@ -510,7 +538,7 @@ static void threadFunc(thread_data_t data)
         //     wait_key_cv(1);
         // }
 
-#ifdef MEASURE
+#ifdef MEASURE        
         end_postprocess[count] = get_time_in_ms();
         e_postprocess[count] = end_postprocess[count] - start_postprocess[count];
         execution_time[count] = end_postprocess[count] - start_preprocess[count];
@@ -718,7 +746,7 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
         else if (theo_thread == 11) strcat(file_path, "gpu-accel_11thread/");
         else printf("\nError: Please set -theo_thread {thread_num}\n");
     }
-    else strcat(file_path, "gpu-accel/");
+    else strcat(file_path, "layer_time/");
 
     strcat(file_path, model_name);
     strcat(file_path, "/");
