@@ -414,24 +414,23 @@ static void threadFunc(thread_data_t data)
         cuda_push_array(state.input, net.input_pinned_cpu, size);
         state.workspace = net.workspace;
         for(j = 0; j < gLayer; ++j){
+            double start_layer_time = get_time_in_ms();
             state.index = j;
             l = net.layers[j];
             if(l.delta_gpu && state.train){
                 fill_ongpu(l.outputs * l.batch, 0, l.delta_gpu, 1);
             }
 
-            double start_layer_time = get_time_in_ms();
 
             l.forward_gpu(l, state);
-            CHECK_CUDA(cudaStreamSynchronize(get_cuda_stream()));
-
-            layers_time[count][j] = get_time_in_ms() - start_layer_time;
-            printf("[%d] layer time : %0.3f \n", j, layers_time[count][j]);
 
             if (skip_layers[j]){
                 cuda_pull_array(l.output_gpu, l.output, l.outputs * l.batch);
             }
             state.input = l.output_gpu;
+            CHECK_CUDA(cudaStreamSynchronize(get_cuda_stream()));
+
+            layers_time[count][j] = get_time_in_ms() - start_layer_time;
         }
 
         cuda_pull_array(l.output_gpu, l.output, l.outputs * l.batch);
@@ -601,7 +600,7 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
 
 #ifdef MEASURE
 
-        optimal_core = 11;
+        optimal_core = 1;
 
         R = 0.0;
         sleep_time = 0.0;
