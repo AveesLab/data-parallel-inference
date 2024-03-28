@@ -474,7 +474,7 @@ static void processFunc(process_data_t data)
         CPU_SET(data.process_id, &cpuset);
         pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
         for(j = rLayer; j < net.n; ++j){
-            printf("get num threads : %d \n", openblas_get_num_threads());
+            //printf("get num threads : %d \n", openblas_get_num_threads());
             state.index = j;
             l = net.layers[j];
             if(l.delta && state.train && l.train){
@@ -646,6 +646,7 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
         }
     }
 
+
 #ifdef MEASURE
     measure_data_t receivedData[num_process];
 
@@ -657,12 +658,31 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
     }
 #endif
 
+    double max_gpu_infer_time = 0.0;
+    double max_execution_time = 0.0;
+
+    for (i = 10; i < 15; i++) {
+        printf("max_gpu_infer_time: %lf\n", MAX(max_gpu_infer_time, receivedData[0].e_gpu_infer[i])); // GPU_infer
+        printf("max_execution_time: %lf\n", MAX(max_execution_time, (receivedData[0].e_preprocess[i]+receivedData[0].e_gpu_infer[i]+receivedData[0].e_cpu_infer[i]+receivedData[0].e_postprocess[i])));
+        printf("avg_gpu_infer_time: %lf\n", receivedData[0].e_gpu_infer[i]);
+        printf("avg_execution_time: %lf\n", receivedData[0].execution_time[i]-receivedData[0].waiting_gpu[i]);
+    }
+
     for (i = 0; i < num_process; i++) {
         wait(&status);
     }
 
     // Remove semaphores
     semctl(sem_id, 0, IPC_RMID);
+    max_gpu_infer_time = 0.0;
+    max_execution_time = 0.0;
+
+    for (i = 10; i < 15; i++) {
+        printf("max_gpu_infer_time: %lf\n", MAX(max_gpu_infer_time, receivedData[0].e_gpu_infer[i])); // GPU_infer
+        printf("max_execution_time: %lf\n", MAX(max_execution_time, (receivedData[0].e_preprocess[i]+receivedData[0].e_gpu_infer[i]+receivedData[0].e_cpu_infer[i]+receivedData[0].e_postprocess[i])));
+        printf("avg_gpu_infer_time: %lf\n", receivedData[0].e_gpu_infer[i]);
+        printf("avg_execution_time: %lf\n", receivedData[0].execution_time[i]-receivedData[0].waiting_gpu[i]);
+    }
 
 #ifdef MEASURE
     char file_path[256] = "measure/";
