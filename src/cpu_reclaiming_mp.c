@@ -87,8 +87,15 @@ typedef struct measure_data_t{
     double frame_rate[200];
 
 } measure_data_t;
-#endif
+double max_gpu_infer_time = 0.0f;
+double max_execution_time = 0.0f;
+double avg_gpu_infer_time = 0.0f;
+double avg_execution_time = 0.0f;
 
+#endif
+int optimal_core = 11;
+int num_thread = 0;
+double R = 0.0f;
 #ifdef MEASURE
 static int compare(const void *a, const void *b) {
     double valueA = *((double *)a + 1);
@@ -135,11 +142,11 @@ static int write_result(char *file_path, measure_data_t *measure_data)
     }
     else printf("\nWrite output in %s\n", file_path); 
 
-    double sum_measure_data[num_exp * num_process][23];
-    for(i = 0; i < num_exp * num_process; i++)
+    double sum_measure_data[num_exp * optimal_core][23];
+    for(i = 0; i < num_exp * optimal_core; i++)
     {
-        int core_id = (i + 1) - (i / num_process) * num_process;
-        int count = i / num_process;
+        int core_id = (i + 1) - (i / optimal_core) * optimal_core;
+        int count = i / optimal_core;
         
         measure_data[core_id - 1].execution_time[count] = measure_data[core_id - 1].end_postprocess[count] - measure_data[core_id - 1].start_preprocess[count];
         measure_data[core_id - 1].frame_rate[count] = 1000 / measure_data[core_id - 1].execution_time[count];
@@ -184,7 +191,7 @@ static int write_result(char *file_path, measure_data_t *measure_data)
             "start_postprocess", "e_postprocess", "end_postprocess", 
             "execution_time", "frame_rate");
 
-    for(i = 0; i < num_exp * num_process; i++)
+    for(i = 0; i < num_exp * optimal_core; i++)
     {
         fprintf(fp, "%0.0f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n",  
                 sum_measure_data[i][0], sum_measure_data[i][1], sum_measure_data[i][2], 
@@ -421,7 +428,7 @@ static void processFunc(process_data_t data)
         nvtxRangeId_t nvtx_task_reclaiming;
         nvtx_task_reclaiming = nvtxRangeStartA(task_reclaiming);
 #endif
-
+        
         lock_resource(1);
 
 #ifdef MEASURE
@@ -429,18 +436,17 @@ static void processFunc(process_data_t data)
 #endif
 
         // when cpu reclaim over gpu, exit() okay??????????????????????
-        openblas_set_num_threads(3);
+        num_thread = num_process - optimal_core + 1;
+        openblas_set_num_threads(num_thread);
         CPU_ZERO(&cpuset);
         CPU_SET(data.process_id, &cpuset);
         pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
-        CPU_ZERO(&cpuset);
-        CPU_SET(10, &cpuset);
-        openblas_setaffinity(0, sizeof(cpuset), &cpuset);
-        
-        CPU_ZERO(&cpuset);
-        CPU_SET(11, &cpuset);
-        openblas_setaffinity(1, sizeof(cpuset), &cpuset);
+        for (int k = 0; k < num_thread - 1; k++) {
+            CPU_ZERO(&cpuset);
+            CPU_SET(num_process - k, &cpuset);
+            openblas_setaffinity(k, sizeof(cpuset), &cpuset);
+        }
 
         state.workspace = net.workspace_cpu;
         gpu_yolo = 0;
@@ -575,7 +581,7 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
 
     printf("\n\nCPU-Reclaiming-MP with %d processes with %d gpu-layer & %d reclaim-layer\n", num_process, gLayer, rLayer);
 
-    int i;
+    int i, j;
 
     pid_t pids[MAXCORES-1];
     int status;
@@ -595,9 +601,6 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
     // Initialize semaphores
     union semun arg;
     unsigned short values[2] = {1, 1};  // Initialize both semaphores to 1
-    arg.array = values;
-    semctl(sem_id, 0, SETALL, arg);
-
     arg.array = values;
     semctl(sem_id, 0, SETALL, arg);
 
@@ -645,7 +648,9 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
             exit(1);
         }
     }
-
+    for (i = 0; i < num_process; i++) {
+        wait(&status);
+    }
 
 #ifdef MEASURE
     measure_data_t receivedData[num_process];
@@ -663,27 +668,97 @@ void cpu_reclaiming_mp(char *datacfg, char *cfgfile, char *weightfile, char *fil
 
     for (i = 10; i < 15; i++) {
         printf("max_gpu_infer_time: %lf\n", MAX(max_gpu_infer_time, receivedData[0].e_gpu_infer[i])); // GPU_infer
-        printf("max_execution_time: %lf\n", MAX(max_execution_time, (receivedData[0].e_preprocess[i]+receivedData[0].e_gpu_infer[i]+receivedData[0].e_cpu_infer[i]+receivedData[0].e_postprocess[i])));
-        printf("avg_gpu_infer_time: %lf\n", receivedData[0].e_gpu_infer[i]);
-        printf("avg_execution_time: %lf\n", receivedData[0].execution_time[i]-receivedData[0].waiting_gpu[i]);
     }
 
+    printf("\n\n::Test EXP done::");
+    int fd2[MAXCORES-1][2];
+
+    int startIdx = 10 * num_process;
+    for (i = 10; i < num_exp; i++) {
+        for (j = 0; j < num_process; j++) {
+            max_gpu_infer_time = MAX(max_gpu_infer_time, receivedData[j].e_gpu_infer[i]);
+            max_execution_time = MAX(max_execution_time, (receivedData[j].e_preprocess[i]+receivedData[j].e_gpu_infer[i]+receivedData[j].e_cpu_infer[i]+receivedData[j].e_postprocess[i]));
+            avg_gpu_infer_time += receivedData[j].e_gpu_infer[i];
+            avg_execution_time += receivedData[j].e_preprocess[i]+receivedData[j].e_gpu_infer[i]+receivedData[j].e_cpu_infer[i]+receivedData[j].e_postprocess[i];
+        }        
+    }
+    avg_gpu_infer_time /= num_process * num_exp - startIdx + 1;
+    avg_execution_time /= num_process * num_exp - startIdx + 1;
+    double wcet_ratio = 1.07;
+    max_gpu_infer_time = avg_gpu_infer_time * wcet_ratio; // GPU_infer
+    max_execution_time = avg_execution_time * wcet_ratio; // CPU_infer + Post
+    printf("\n\n avg execution time = %f\n\n", avg_execution_time);
+    printf("\n\n max execution time = %f\n\n", max_execution_time);
+    printf("\n\n avg gpu infer time = %f\n\n", avg_gpu_infer_time);
+    printf("\n\n max gpu infer time = %f\n\n", max_gpu_infer_time);
+
+
+    R = MAX(max_gpu_infer_time, max_execution_time / num_process);
+    optimal_core = ceil(max_execution_time / R);
+    printf("\n\nOptimal core = %d\n\n", optimal_core);
+    for (i = 0; i < optimal_core; i++) {
+        data[i].datacfg = datacfg;
+        data[i].cfgfile = cfgfile;
+        data[i].weightfile = weightfile;
+        data[i].filename = filename;
+        data[i].thresh = thresh;
+        data[i].hier_thresh = hier_thresh;
+        data[i].dont_show = dont_show;
+        data[i].ext_output = ext_output;
+        data[i].save_labels = save_labels;
+        data[i].outfile = outfile;
+        data[i].letter_box = letter_box;
+        data[i].benchmark_layers = benchmark_layers;
+        data[i].process_id = i + 1;
+    }
+    printf("\n\n::EXP-1:: CPU-Reclaiming-MP with %d processes with %d gpu-layer & %d reclaim-layer\n", num_process, gLayer, rLayer);
+    for (i = 0; i < optimal_core; i++) {
+#ifdef MEASURE
+        if (pipe(fd2[i]) == -1) {
+            perror("pipe");
+            exit(1);
+        }
+#endif
+        pids[i] = fork();
+        if (pids[i] == 0) { // child process
+        #ifdef MEASURE
+            close(fd2[i][0]); // close reading end in the child
+            processFunc(data[i], fd2[i][1]);
+            close(fd2[i][1]);
+        #else
+            processFunc(data[i]);
+            #endif
+
+            exit(0);
+        } else if (pids[i] < 0) {
+            perror("fork");
+            exit(1);
+        }
+    }
     for (i = 0; i < num_process; i++) {
         wait(&status);
     }
 
+#ifdef MEASURE
+    // In the parent process, read data from all child processes
+    for (i = 0; i < optimal_core; i++) {
+        close(fd2[i][1]); // close writing end in the parent
+        read(fd2[i][0], &receivedData[i], sizeof(measure_data_t));
+        close(fd2[i][0]);
+    }
+#endif
+
     // Remove semaphores
-    semctl(sem_id, 0, IPC_RMID);
+    //semctl(sem_id, 0, IPC_RMID);
     max_gpu_infer_time = 0.0;
     max_execution_time = 0.0;
 
-    for (i = 10; i < 15; i++) {
+    for (i = 160; i < 165; i++) {
         printf("max_gpu_infer_time: %lf\n", MAX(max_gpu_infer_time, receivedData[0].e_gpu_infer[i])); // GPU_infer
-        printf("max_execution_time: %lf\n", MAX(max_execution_time, (receivedData[0].e_preprocess[i]+receivedData[0].e_gpu_infer[i]+receivedData[0].e_cpu_infer[i]+receivedData[0].e_postprocess[i])));
-        printf("avg_gpu_infer_time: %lf\n", receivedData[0].e_gpu_infer[i]);
-        printf("avg_execution_time: %lf\n", receivedData[0].execution_time[i]-receivedData[0].waiting_gpu[i]);
     }
 
+    printf("\n\n EXP-1 done");
+    semctl(sem_id, 0, IPC_RMID);
 #ifdef MEASURE
     char file_path[256] = "measure/";
 
