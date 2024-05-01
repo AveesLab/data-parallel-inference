@@ -300,9 +300,9 @@ static void threadFunc(thread_data_t data)
 
     pthread_mutex_lock(&mutex_init);
     // double start_1 = get_time_in_ms();
-    // if (!data.isSet) net_list[data.thread_id] = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
-    // network net = net_list[data.thread_id];
-    network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device);
+    if (!data.isSet) net_list[data.thread_id] = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
+    network net = net_list[data.thread_id];
+    // network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device);
     // printf("parse_network_cfg_custom : %.3lf ms\n", get_time_in_ms() - start_1);
     pthread_mutex_unlock(&mutex_init);
 
