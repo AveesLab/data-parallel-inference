@@ -275,8 +275,8 @@ static void threadFunc(thread_data_t data)
     int object_detection = strstr(data.cfgfile, target_model);
 
     int device = 1; // Choose CPU or GPU
-    extern int skip_layers[1000];
-    extern gpu_yolo;
+    static int skip_layers[1000];
+    static gpu_yolo;
 
     network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
     layer l = net.layers[net.n - 1];
@@ -336,7 +336,7 @@ static void threadFunc(thread_data_t data)
         start_infer[count] = get_time_in_ms();
 #endif
 
-        extern int gpu_yolo;
+        static int gpu_yolo;
         gpu_yolo = 0;
 
         network_state state = {0};
