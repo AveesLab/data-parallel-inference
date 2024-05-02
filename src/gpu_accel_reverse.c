@@ -26,6 +26,8 @@ pthread_barrier_t barrier;
 
 // static int coreIDOrder[MAXCORES] = {3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11};
 static int coreIDOrder[MAXCORES] = {0,1,2,3,4,5,6,7,8,9,10,11};
+static network net_list[MAXCORES];
+static pthread_mutex_t mutex_init = PTHREAD_MUTEX_INITIALIZER;
 
 static pthread_mutex_t mutex_gpu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -47,6 +49,7 @@ typedef struct thread_data_t{
     int thread_id;
     int num_thread;
     bool isTest;
+    bool isSet;
 } thread_data_t;
 
 #ifdef MEASURE
@@ -277,16 +280,28 @@ static void threadFunc(thread_data_t data)
     static int skip_layers[1000];
     static gpu_yolo;
 
-    network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
+    pthread_mutex_lock(&mutex_init);
+    // double start_1 = get_time_in_ms();
+    if (!data.isSet) {
+        network net_init = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
+
+        if (data.weightfile) {
+            load_weights(&net_init, data.weightfile);
+        }
+        if (net_init.letter_box) data.letter_box = 1;
+        net_init.benchmark_layers = data.benchmark_layers;
+        fuse_conv_batchnorm(net_init);
+        calculate_binary_weights(net_init);
+
+        net_list[data.thread_id] = net_init;
+    }
+    network net = net_list[data.thread_id];
+    // network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device);
+    // printf("parse_network_cfg_custom : %.3lf ms\n", get_time_in_ms() - start_1);
+    pthread_mutex_unlock(&mutex_init);
+
     layer l = net.layers[net.n - 1];
 
-    if (data.weightfile) {
-        load_weights(&net, data.weightfile);
-    }
-    if (net.letter_box) data.letter_box = 1;
-    net.benchmark_layers = data.benchmark_layers;
-    fuse_conv_batchnorm(net);
-    calculate_binary_weights(net);
 
     srand(2222222);
 
@@ -596,6 +611,7 @@ void gpu_accel_reverse(char *datacfg, char *cfgfile, char *weightfile, char *fil
             data[i].thread_id = i + 1;
             data[i].num_thread = optimal_core;
             data[i].isTest = true;
+            data[i].isSet = false;
             rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
             if (rc) {
                 printf("Error: Unable to create thread, %d\n", rc);
@@ -659,6 +675,7 @@ void gpu_accel_reverse(char *datacfg, char *cfgfile, char *weightfile, char *fil
             data[i].thread_id = i + 1;
             data[i].num_thread = optimal_core;
             data[i].isTest = false;
+            data[i].isSet = true;
             rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
             if (rc) {
                 printf("Error: Unable to create thread, %d\n", rc);
@@ -723,6 +740,7 @@ void gpu_accel_reverse(char *datacfg, char *cfgfile, char *weightfile, char *fil
             data[i].thread_id = i + 1;
             data[i].num_thread = optimal_core;
             data[i].isTest = false;
+            data[i].isSet = true;
             rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
             if (rc) {
                 printf("Error: Unable to create thread, %d\n", rc);
@@ -788,6 +806,7 @@ void gpu_accel_reverse(char *datacfg, char *cfgfile, char *weightfile, char *fil
             data[i].thread_id = i + 1;
             data[i].num_thread = optimal_core;
             data[i].isTest = false;
+            data[i].isSet = true;
             rc = pthread_create(&threads[i], NULL, threadFunc, &data[i]);
             if (rc) {
                 printf("Error: Unable to create thread, %d\n", rc);

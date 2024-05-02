@@ -27,13 +27,13 @@ pthread_barrier_t barrier;
 
 // static int coreIDOrder[MAXCORES] = {3, 6, 9, 1, 4, 7, 10, 2, 5, 8, 11};
 static int coreIDOrder[MAXCORES] = {0,1,2,3,4,5,6,7,8,9,10,11};
-
+static network net_list[MAXCORES];
 static pthread_mutex_t mutex_init = PTHREAD_MUTEX_INITIALIZER;
 
 static pthread_mutex_t mutex_gpu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static int current_thread = 1;
-static network net_list[MAXCORES];
+
 
 typedef struct thread_data_t{
     char *datacfg;
@@ -300,7 +300,19 @@ static void threadFunc(thread_data_t data)
 
     pthread_mutex_lock(&mutex_init);
     // double start_1 = get_time_in_ms();
-    if (!data.isSet) net_list[data.thread_id] = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
+    if (!data.isSet) {
+        network net_init = parse_network_cfg_custom(data.cfgfile, 1, 1, device); // set batch=1
+
+        if (data.weightfile) {
+            load_weights(&net_init, data.weightfile);
+        }
+        if (net_init.letter_box) data.letter_box = 1;
+        net_init.benchmark_layers = data.benchmark_layers;
+        fuse_conv_batchnorm(net_init);
+        calculate_binary_weights(net_init);
+
+        net_list[data.thread_id] = net_init;
+    }
     network net = net_list[data.thread_id];
     // network net = parse_network_cfg_custom(data.cfgfile, 1, 1, device);
     // printf("parse_network_cfg_custom : %.3lf ms\n", get_time_in_ms() - start_1);
@@ -308,13 +320,6 @@ static void threadFunc(thread_data_t data)
 
     layer l = net.layers[net.n - 1];
 
-    if (data.weightfile) {
-        load_weights(&net, data.weightfile);
-    }
-    if (net.letter_box) data.letter_box = 1;
-    net.benchmark_layers = data.benchmark_layers;
-    fuse_conv_batchnorm(net);
-    calculate_binary_weights(net);
 
     extern int skip_layers[1000][10];
     int skipped_layers[1000] = {0, };
