@@ -18,6 +18,10 @@ get_model_info() {
             data_file="coco"
             layer_num=21
             ;;
+	"densenet201")
+	    data_file="imagenet1k"
+	    layer_num=306
+	    ;;
         *)
             echo "Unknown model: $1"
             exit 1
@@ -26,7 +30,7 @@ get_model_info() {
 }
 
 ## Data-Parallel
-for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" 
+for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" "densenet201"
 do
 	mkdir -p measure/data-parallel/$model/
     for ((num_worker=1; num_worker<=8; num_worker++))
@@ -36,7 +40,7 @@ do
 done
 
 ## CPU Layer Time
-for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" 
+for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" "densenet201" 
 do
 	mkdir -p measure/pseudo_layer_time/$model/
     for ((num_worker=1; num_worker<=8; num_worker++))
@@ -47,7 +51,7 @@ do
 done
 
 ## GPU Layer Time
-for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" 
+for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" "densenet201"
 do
     get_model_info "$model"  # 모델에 맞는 layer_num 설정
     mkdir -p measure/pseudo_layer_time/$model/
@@ -64,7 +68,7 @@ do
 done
 
 ## GPU-Accel
-for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" 
+for model in "resnet10" "resnet18" "yolov2-tiny" "yolov4-tiny" "densenet201" 
 do
     get_model_info "$model"  # 모델에 맞는 layer_num 설정
     mkdir -p measure/gpu-accel/$model/

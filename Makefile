@@ -137,9 +137,9 @@ LDFLAGS+= -lgomp
 endif
 
 ifeq ($(OPENBLAS), 1)
-COMMON+= -I/usr/include/OpenBLAS
+COMMON+= -I/usr/local/openblasA/include -I/usr/local/openblasB/include
 CFLAGS+= -DOPENBLAS
-LDFLAGS+= -L/usr/include/OpenBLAS/lib -lopenblas -lpthread -lgfortran
+LDFLAGS+= -L/usr/local/openblasA/lib -L/usr/local/openblasB/lib -lopenblasB -lopenblasA -lpthread -lgfortran
 endif
 
 ifeq ($(BLIS), 1)

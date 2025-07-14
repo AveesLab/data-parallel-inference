@@ -1233,6 +1233,12 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
     static int u = 0;
     u++;
 
+    //printf("l.batch = %d l.groups = %d l.nweights = %d\n", l.batch, l.groups, l.nweights);
+    //printf("m = %d, n = %d, k = %d\n", m, n, k);
+    //printf("weights size = %f\n", ((float)l.nweights * (float)sizeof(float) / 1024.0 / 1024.0));
+    //static int weights_size;
+    //weights_size += l.nweights * sizeof(float);
+    //printf("total_size = %d\n", weights_size);
     for(i = 0; i < l.batch; ++i)
     {
         for (j = 0; j < l.groups; ++j)

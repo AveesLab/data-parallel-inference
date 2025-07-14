@@ -24,6 +24,23 @@
 #endif
 #endif
 
+#include <cblasA.h>
+
+#include <asm/unistd.h>
+#include <linux/perf_event.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+
+static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+	int ret;
+	ret = syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+	return ret;
+}
+
 // GPU 전용 스레드 함수
 static void* gpu_dedicated_thread(void* arg) {
     int core_id = sched_getcpu();
@@ -219,9 +236,30 @@ static void* gpu_dedicated_thread(void* arg) {
 // 워커 스레드 함수 수정
 static void threadFunc(thread_data_t data)
 {
+    struct perf_event_attr pe;
+    long long count;
+    int fd;
+
+    memset(&pe, 0, sizeof(struct perf_event_attr));
+    pe.type = PERF_TYPE_HW_CACHE;
+    pe.size = sizeof(struct perf_event_attr);
+    pe.config = PERF_COUNT_HW_CACHE_LL | PERF_COUNT_HW_CACHE_OP_READ << 8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16;
+    pe.disabled = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv = 1;
+
+    //fd = perf_event_open(&pe, 0, -1, -1, 0);
+    //if(fd == -1) {
+//	    fprintf(stderr, "error opening perf counter %llx\n", pe.config);
+//	    exit(EXIT_FAILURE);
+ //   }
+    //ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+    //ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
     // __Worker-thread-initialization__
     pthread_mutex_lock(&mutex_init);
     // GPU SETUP - 초기화만 수행, 실제 GPU 작업은 GPU 스레드가 담당
+    openblas_set_num_threads(1);
     list *options = read_data_cfg(data.datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
     int names_size = 0;
@@ -323,6 +361,14 @@ static void threadFunc(thread_data_t data)
             state.delta = 0;
             state.workspace = net.workspace_cpu;
             
+    fd = perf_event_open(&pe, 0, -1, -1, 0);
+    if(fd == -1) {
+	    fprintf(stderr, "error opening perf counter %llx\n", pe.config);
+	    exit(EXIT_FAILURE);
+    }
+    ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+    ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
             for(j = 0; j < net.n; ++j){
                 state.index = j;
                 l = net.layers[j];
@@ -335,6 +381,10 @@ static void threadFunc(thread_data_t data)
                 state.input = l.output;
             }
             
+    ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+    read(fd, &count, sizeof(long long));
+    printf("%dthread %dexp llc read miss: %lld\n", data.thread_id, i,count);
+    close(fd);
             
             double worker_receive_time = worker_request_time;
             double worker_postprocess_time = current_time_in_ms();
@@ -640,6 +690,11 @@ static void threadFunc(thread_data_t data)
     free_list_contents_kvp(options);
     free_list(options);
     free_alphabet(alphabet);
+
+    //ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+    //read(fd, &count, sizeof(long long));
+    //printf("%lld\n", count);
+    //close(fd);
     pthread_exit(NULL);
 }
 
@@ -657,6 +712,7 @@ void gpu_accel(char *datacfg, char *cfgfile, char *weightfile, char *filename, f
     pthread_t gpu_thread;
     pthread_t threads[num_thread];
     thread_data_t data[num_thread];
+
 
     // 로그 카운터 초기화
     gpu_log_count = 0;

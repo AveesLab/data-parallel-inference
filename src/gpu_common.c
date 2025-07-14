@@ -1,7 +1,8 @@
 #include "gpu_common.h"
 #include "detector.h"
 
-int coreIDOrder[MAXCORES] = {4, 5, 6, 7, 8, 9, 10, 11};
+//int coreIDOrder[MAXCORES] = {4, 5, 6, 7, 8, 9, 10, 11};
+int coreIDOrder[MAXCORES] = {4, 8, 5, 9, 6, 10, 7, 11};
 
 int pseudo_layer_indexes[500];
 int num_pseudo_layer = 0;
