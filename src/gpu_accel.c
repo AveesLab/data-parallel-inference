@@ -27,7 +27,7 @@
 #include <cblasA.h>
 
 #include <asm/unistd.h>
-#include <linux/perf_event.h>
+//#include <linux/perf_event.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,11 +35,11 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 
-static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
-	int ret;
-	ret = syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
-	return ret;
-}
+//static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+//	int ret;
+//	ret = syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+//	return ret;
+//}
 
 // GPU 전용 스레드 함수
 static void* gpu_dedicated_thread(void* arg) {
@@ -236,17 +236,17 @@ static void* gpu_dedicated_thread(void* arg) {
 // 워커 스레드 함수 수정
 static void threadFunc(thread_data_t data)
 {
-    struct perf_event_attr pe;
+    //struct perf_event_attr pe;
     long long count;
     int fd;
 
-    memset(&pe, 0, sizeof(struct perf_event_attr));
-    pe.type = PERF_TYPE_HW_CACHE;
-    pe.size = sizeof(struct perf_event_attr);
-    pe.config = PERF_COUNT_HW_CACHE_LL | PERF_COUNT_HW_CACHE_OP_READ << 8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16;
-    pe.disabled = 1;
-    pe.exclude_kernel = 1;
-    pe.exclude_hv = 1;
+    //memset(&pe, 0, sizeof(struct perf_event_attr));
+    //pe.type = PERF_TYPE_HW_CACHE;
+    //pe.size = sizeof(struct perf_event_attr);
+    //pe.config = PERF_COUNT_HW_CACHE_LL | PERF_COUNT_HW_CACHE_OP_READ << 8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16;
+    //pe.disabled = 1;
+    //pe.exclude_kernel = 1;
+    //pe.exclude_hv = 1;
 
     //fd = perf_event_open(&pe, 0, -1, -1, 0);
     //if(fd == -1) {
@@ -361,13 +361,13 @@ static void threadFunc(thread_data_t data)
             state.delta = 0;
             state.workspace = net.workspace_cpu;
             
-    fd = perf_event_open(&pe, 0, -1, -1, 0);
-    if(fd == -1) {
-	    fprintf(stderr, "error opening perf counter %llx\n", pe.config);
-	    exit(EXIT_FAILURE);
-    }
-    ioctl(fd, PERF_EVENT_IOC_RESET, 0);
-    ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+    //fd = perf_event_open(&pe, 0, -1, -1, 0);
+    //if(fd == -1) {
+//	    fprintf(stderr, "error opening perf counter %llx\n", pe.config);
+//	    exit(EXIT_FAILURE);
+    //}
+    //ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+    //ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
             for(j = 0; j < net.n; ++j){
                 state.index = j;
@@ -381,10 +381,10 @@ static void threadFunc(thread_data_t data)
                 state.input = l.output;
             }
             
-    ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
-    read(fd, &count, sizeof(long long));
-    printf("%dthread %dexp llc read miss: %lld\n", data.thread_id, i,count);
-    close(fd);
+    //ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+    //read(fd, &count, sizeof(long long));
+    //printf("%dthread %dexp llc read miss: %lld\n", data.thread_id, i,count);
+    //close(fd);
             
             double worker_receive_time = worker_request_time;
             double worker_postprocess_time = current_time_in_ms();
